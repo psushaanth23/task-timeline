@@ -544,6 +544,13 @@ export default class App extends React.Component {
     if (e.button !== 0) return;
     const el = this.contentRef.current;
     if (!el) return;
+    // Clicking empty space while renaming commits + exits (no marquee this
+    // gesture); the board has no click handler so nothing else fires.
+    if (this.state.editingId) {
+      this.maybeExitInlineEdit();
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
     const rect = el.getBoundingClientRect();
     const cx = e.clientX - rect.left;
@@ -604,9 +611,15 @@ export default class App extends React.Component {
   onCardMouseDown(task, e) {
     e.stopPropagation();
     if (e.button !== 0) return;
-    // While inline-editing this card, let clicks place the caret / select text
-    // rather than starting a drag.
-    if (this.state.editingId === task.id) return;
+    // A mousedown on any card body while editing (clicks on the editable text
+    // itself are stopped upstream) commits the rename and exits — this gesture
+    // just closes the editor and doesn't also drag or select.
+    if (this.state.editingId) {
+      this.maybeExitInlineEdit();
+      this._dragJustHappened = true; // swallow the trailing select click
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
     if (this.state.selection.includes(task.id)) {
       this.startGroupDrag(e);
@@ -756,6 +769,21 @@ export default class App extends React.Component {
 
   cancelInlineEdit() {
     this.setState({ editingId: null });
+  }
+
+  // Commit + exit an active inline rename when the pointer goes down elsewhere.
+  // Board/card mousedown handlers call preventDefault (to stop drag text
+  // selection), which also suppresses the native blur — so we blur explicitly,
+  // which fires the title's onBlur commit. Returns true if we were editing.
+  maybeExitInlineEdit() {
+    if (!this.state.editingId) return false;
+    const el = document.activeElement;
+    if (el && el.isContentEditable && typeof el.blur === 'function') {
+      el.blur(); // synchronously fires Timeline's onBlur -> commit + clear
+    } else {
+      this.setState({ editingId: null });
+    }
+    return true;
   }
 
   computeVals() {
