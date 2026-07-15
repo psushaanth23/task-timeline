@@ -217,6 +217,7 @@ export default function Timeline(props) {
           <div
             key={t.id}
             style={t.style}
+            title={t.editing ? undefined : t.title}
             onMouseDown={t.onMouseDown}
             onClick={t.onClick}
             onDoubleClick={t.onDbl}
@@ -231,29 +232,38 @@ export default function Timeline(props) {
               ref={t.editing ? editRef : null}
               contentEditable={t.editing}
               suppressContentEditableWarning
-              title={t.editing ? undefined : 'Double-click to rename'}
+              title={t.editing ? undefined : t.title}
               onMouseDown={t.editing ? (e) => e.stopPropagation() : undefined}
               onClick={t.editing ? (e) => e.stopPropagation() : undefined}
               onDoubleClick={t.editing ? (e) => e.stopPropagation() : undefined}
               onKeyDown={t.editing ? onTitleKeyDown : undefined}
               onBlur={t.editing ? (e) => onTitleBlur(t.id, e) : undefined}
-              style={t.editing ? { ...titleBaseStyle, ...titleEditingStyle } : titleBaseStyle}
+              style={
+                t.editing
+                  ? { ...titleBaseStyle, ...titleEditingStyle }
+                  : t.narrow
+                    ? { ...titleBaseStyle, display: 'none' }
+                    : titleBaseStyle
+              }
             >
-              {t.editing ? null : t.title}
+              {t.editing || t.narrow ? null : t.title}
             </div>
-            <div
-              style={{
-                fontSize: '11px',
-                opacity: 0.9,
-                fontFamily: "'JetBrains Mono',monospace",
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                textShadow: '0 1px 3px rgba(0,0,0,.7)',
-              }}
-            >
-              {t.timeLabel}
-            </div>
+            {!t.narrow && (
+              <div
+                style={{
+                  fontSize: '11px',
+                  opacity: 0.9,
+                  fontFamily: "'JetBrains Mono',monospace",
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  textShadow: '0 1px 3px rgba(0,0,0,.7)',
+                }}
+              >
+                {t.timeLabel}
+              </div>
+            )}
+            {t.narrow && !t.editing && <div style={t.externalLabelStyle}>{t.title}</div>}
             <div
               data-dot="true"
               data-task-id={t.id}

@@ -21,6 +21,15 @@ const TRACKW_MAX = 320;
 const TRACKW_STEP = 10;
 const TRACKW_DEFAULT = 150;
 const VERTICAL_PX = 1.5;
+// Snap grid for task start/end (minutes). Offsets are measured from the fixed
+// absolute origin (#37), so snapping to multiples of SNAP_MIN keeps both the
+// start and the end on the 10-minute grid and works naturally across midnight.
+const SNAP_MIN = 10;
+// Max task start offset within the 48h (2880-min) canvas, kept on the snap grid.
+const MAX_START = LAYOUT.totalMin - SNAP_MIN;
+// Below this on-screen card length (px, horizontal mode) the in-card title is
+// too cramped to read, so we hide it and render the name just outside the card.
+const NARROW_CARD_PX = 90;
 
 export default class App extends React.Component {
   constructor(props) {
@@ -533,8 +542,8 @@ export default class App extends React.Component {
     const V = this.state.orientation === 'vertical';
     const timeRaw = V ? e.clientY - rect.top : e.clientX - rect.left;
     const laneRaw = V ? e.clientX - rect.left : e.clientY - rect.top;
-    let min = Math.round(timeRaw / px / 15) * 15;
-    min = Math.max(0, Math.min(2865, min));
+    let min = this.snapTime(timeRaw / px);
+    min = Math.max(0, Math.min(MAX_START, min));
     const lane = Math.max(0, Math.min(this.state.tracks.length - 1, Math.floor(laneRaw / laneSize)));
     const task = {
       id: 'id' + Date.now() + Math.floor(Math.random() * 9999),
@@ -616,8 +625,8 @@ export default class App extends React.Component {
 
   // ---- Shared drag/select infrastructure (content-coordinate based) ----
 
-  snap15(m) {
-    return Math.round(m / 15) * 15;
+  snapTime(m) {
+    return Math.round(m / SNAP_MIN) * SNAP_MIN;
   }
 
   pointerToContent(clientX, clientY) {
@@ -789,7 +798,7 @@ export default class App extends React.Component {
     if (!d) return;
     const p = this.pointerToContent(x, y);
     if (!p) return;
-    const newStart = Math.max(0, Math.min(2865, this.snap15(p.time - d.grabTime)));
+    const newStart = Math.max(0, Math.min(MAX_START, this.snapTime(p.time - d.grabTime)));
     const newLane = Math.max(0, Math.min(this.state.tracks.length - 1, Math.round(p.laneFloat - d.grabLane)));
     const moved = d.moved || Math.abs(x - d.startClientX) > 3 || Math.abs(y - d.startClientY) > 3;
     this.setState({ drag: { ...d, curStart: newStart, curLane: newLane, moved } });
@@ -826,12 +835,12 @@ export default class App extends React.Component {
     if (!g) return;
     const p = this.pointerToContent(x, y);
     if (!p) return;
-    let delta = this.snap15(p.time - g.anchorTime);
+    let delta = this.snapTime(p.time - g.anchorTime);
     const starts = Object.values(g.orig);
     if (starts.length) {
       const minS = Math.min(...starts);
       const maxS = Math.max(...starts);
-      delta = Math.max(-minS, Math.min(2865 - maxS, delta));
+      delta = Math.max(-minS, Math.min(MAX_START - maxS, delta));
     }
     const moved = g.moved || Math.abs(x - g.startClientX) > 3 || Math.abs(y - g.startClientY) > 3;
     this.setState({ groupDrag: { ...g, delta, moved } });
@@ -844,7 +853,7 @@ export default class App extends React.Component {
       const sel = new Set(this.state.selection);
       const tasks = this.state.tasks.map((t) =>
         sel.has(t.id) && g.orig[t.id] != null
-          ? { ...t, start: Math.max(0, Math.min(2865, g.orig[t.id] + g.delta)) }
+          ? { ...t, start: Math.max(0, Math.min(MAX_START, g.orig[t.id] + g.delta)) }
           : t,
       );
       this.persist(tasks);
@@ -869,8 +878,8 @@ export default class App extends React.Component {
     if (!p) return;
     const task = this.state.tasks.find((t) => t.id === r.id);
     if (!task) return;
-    let dur = this.snap15(p.time - task.start);
-    dur = Math.max(15, Math.min(2880 - task.start, dur));
+    let dur = this.snapTime(p.time - task.start);
+    dur = Math.max(SNAP_MIN, Math.min(LAYOUT.totalMin - task.start, dur));
     const moved = r.moved || Math.abs(x - r.startClientX) > 3 || Math.abs(y - r.startClientY) > 3;
     this.setState({ resize: { ...r, curDuration: dur, moved } });
   }
@@ -1167,7 +1176,7 @@ export default class App extends React.Component {
         lane = drag.curLane;
         start = drag.curStart;
       } else if (isGroupMoving) {
-        start = Math.max(0, Math.min(2865, (groupDrag.orig[t.id] ?? t.start) + groupDrag.delta));
+        start = Math.max(0, Math.min(MAX_START, (groupDrag.orig[t.id] ?? t.start) + groupDrag.delta));
       }
       if (resize && resize.id === t.id) duration = resize.curDuration;
       const selected = selectionSet.has(t.id);
@@ -1236,9 +1245,34 @@ export default class App extends React.Component {
           ? undefined
           : glow;
       if (selected) boxShadow = '0 0 0 2px #22d3ee, 0 6px 18px rgba(0,0,0,.45)';
+      // Narrow (short) horizontal cards can't fit a readable title, so hide the
+      // in-card text and show the name just to the right of the card. Vertical
+      // cards span the full track width, so their ellipsis'd title + tooltip
+      // suffice. The label is pointer-events:none so it never blocks
+      // drag/resize/select/rename.
+      const narrow = !V && len < NARROW_CARD_PX;
+      const externalLabelStyle = {
+        position: 'absolute',
+        left: '100%',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        marginLeft: '7px',
+        maxWidth: '260px',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        fontSize: '12px',
+        fontWeight: 600,
+        color: done ? 'rgba(231,233,238,.45)' : '#eef0f4',
+        textShadow: '0 1px 4px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.75)',
+        pointerEvents: 'none',
+        zIndex: 4,
+      };
       return {
         id: t.id,
         title: t.title,
+        narrow,
+        externalLabelStyle,
         done,
         editing: this.state.editingId === t.id,
         timeLabel: fmt(start, this.props.timeFormat) + ' · ' + durLabel(duration),
