@@ -35,6 +35,15 @@ export default function TrackName({ name, style, editing, onDoubleClick, onRenam
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
+  // Reset any horizontal scroll the caret introduced while typing a long name.
+  // A contentEditable scrolls to keep the caret visible; if that scrollLeft
+  // persists into the static (ellipsis) view, Chrome renders a black smear over
+  // the ellipsis. Zeroing it on commit makes the ellipsis truncate cleanly.
+  const resetScroll = () => {
+    const el = ref.current;
+    if (el) el.scrollLeft = 0;
+  };
+
   const showTip = () => {
     if (editing) return;
     const el = ref.current;
@@ -60,9 +69,25 @@ export default function TrackName({ name, style, editing, onDoubleClick, onRenam
         onDoubleClick={editing ? undefined : onDoubleClick}
         onMouseEnter={showTip}
         onMouseLeave={hideTip}
-        onBlur={editing ? onRename : undefined}
+        onBlur={
+          editing
+            ? (e) => {
+                resetScroll();
+                onRename(e);
+              }
+            : undefined
+        }
         onKeyDown={editing ? onKeyDown : undefined}
-        style={{ ...style, cursor: editing ? 'text' : 'grab' }}
+        style={{
+          ...style,
+          cursor: editing ? 'text' : 'grab',
+          // While editing, drop the ellipsis and let the caret scroll — an
+          // ellipsis on an editable element paints a black artifact in Chrome.
+          // Keep an explicit readable color so overflow text never goes dark.
+          ...(editing
+            ? { textOverflow: 'clip', color: '#f3f5fa', WebkitTextFillColor: '#f3f5fa' }
+            : null),
+        }}
       >
         {editing ? null : name}
       </div>
