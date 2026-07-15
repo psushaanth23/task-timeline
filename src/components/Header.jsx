@@ -162,7 +162,7 @@ export default function Header(props) {
               textOverflow: 'ellipsis',
             }}
           >
-            Double-click to add · drag to move · marquee to select · Del to delete · ⌘Z to undo
+            Dbl-click empty to add · dbl-click task to edit · triple-click = done · Del · ⌘Z undo
           </p>
         </div>
       </div>

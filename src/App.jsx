@@ -2,6 +2,7 @@ import React from 'react';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Timeline from './components/Timeline.jsx';
+import TaskModal from './components/TaskModal.jsx';
 import { PALETTE, LAYOUT, genTrackId, makeTracks, seedTasks } from './lib/constants.js';
 import { currentMin, minToInput, inputToMin, fmt, fmtHour, durLabel } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
@@ -612,6 +613,7 @@ export default class App extends React.Component {
   finishSingleDrag() {
     const d = this.state.drag;
     if (d && d.moved) {
+      this._dragJustHappened = true;
       const tasks = this.state.tasks.map((t) =>
         t.id === d.id ? { ...t, start: d.curStart, lane: d.curLane } : t,
       );
@@ -652,6 +654,7 @@ export default class App extends React.Component {
 
   finishGroupDrag() {
     const g = this.state.groupDrag;
+    if (g && g.moved) this._dragJustHappened = true;
     if (g && g.moved && g.delta !== 0) {
       const sel = new Set(this.state.selection);
       const tasks = this.state.tasks.map((t) =>
@@ -689,6 +692,7 @@ export default class App extends React.Component {
   finishResize() {
     const r = this.state.resize;
     if (r && r.moved) {
+      this._dragJustHappened = true;
       const tasks = this.state.tasks.map((t) => (t.id === r.id ? { ...t, duration: r.curDuration } : t));
       this.persist(tasks);
     }
@@ -1059,10 +1063,26 @@ export default class App extends React.Component {
         timeLabel: fmt(start, this.props.timeFormat) + ' · ' + durLabel(duration),
         onClick: (e) => {
           e.stopPropagation();
+          // Ignore the click the browser synthesizes at the end of a drag.
+          if (this._dragJustHappened) {
+            this._dragJustHappened = false;
+            return;
+          }
+          // Double-click (detail 2) schedules an edit; if a third click arrives
+          // within the window it's a triple-click, so cancel the edit and toggle
+          // the done/blackout state instead. Single clicks fall through.
+          if (e.detail === 2) {
+            clearTimeout(this._clickTimer);
+            this._clickTimer = setTimeout(() => this.openEdit(t), 260);
+          } else if (e.detail >= 3) {
+            clearTimeout(this._clickTimer);
+            this.toggleDone(t);
+          }
         },
         onDbl: (e) => {
+          // Swallow so double-clicking a task never bubbles to the board's
+          // "create task on empty space" handler.
           e.stopPropagation();
-          this.toggleDone(t);
         },
         onMouseDown: (e) => this.onCardMouseDown(t, e),
         onDotStartDown: (e) => this.startWire(t.id, 'start', e),
@@ -1471,6 +1491,7 @@ export default class App extends React.Component {
           <Sidebar {...vals} />
           <Timeline {...vals} />
         </div>
+        {vals.popupOpen && <TaskModal {...vals} />}
       </div>
     );
   }
