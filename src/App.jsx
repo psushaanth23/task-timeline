@@ -17,12 +17,14 @@ const ZOOM_MIN = 1;
 const ZOOM_MAX = 12;
 const ZOOM_STEP = 0.5;
 // Vertical mode: slider controls the track-column width (pixels) instead,
-// while the time axis keeps a fixed, compact density.
+// while the time axis keeps a fixed density. This is roomy on purpose so short
+// or adjacent tasks (and their labels) don't overlap — vertical mode has no
+// density slider, so the scale must give each task enough vertical room.
 const TRACKW_MIN = 90;
 const TRACKW_MAX = 320;
 const TRACKW_STEP = 10;
 const TRACKW_DEFAULT = 150;
-const VERTICAL_PX = 1.5;
+const VERTICAL_PX = 5;
 // Snap grid for task start/end (minutes). Offsets are measured from the fixed
 // absolute origin (#37), so snapping to multiples of SNAP_MIN keeps both the
 // start and the end on the 10-minute grid and works naturally across midnight.
