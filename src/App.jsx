@@ -1166,6 +1166,22 @@ export default class App extends React.Component {
     tasks.forEach((t) => (byId[t.id] = t));
     const wiring = this.state.wiring;
 
+    // During a group-move, anchor the live time HUD to the leftmost (earliest)
+    // selected task so a single, stable pill pair tracks the whole selection.
+    let groupAnchorId = null;
+    if (groupDrag) {
+      let best = Infinity;
+      this.state.selection.forEach((id) => {
+        const gt = byId[id];
+        if (!gt) return;
+        const s = Math.max(0, Math.min(MAX_START, (groupDrag.orig[id] ?? gt.start) + groupDrag.delta));
+        if (s < best) {
+          best = s;
+          groupAnchorId = id;
+        }
+      });
+    }
+
     const taskViews = tasks.map((t) => {
       const isDragging = drag && drag.id === t.id;
       const isGroupMoving = groupDrag && selectionSet.has(t.id);
@@ -1268,11 +1284,26 @@ export default class App extends React.Component {
         pointerEvents: 'none',
         zIndex: 4,
       };
+      // Live scrubbing HUD: show start/end time-of-day pills while this task is
+      // actively being moved or resized (or is the group-move anchor). Sourced
+      // from the in-progress start/duration so it reflects the snapped value.
+      const showHud =
+        isDragging ||
+        (resize && resize.id === t.id) ||
+        (isGroupMoving && t.id === groupAnchorId);
+      const hud = showHud
+        ? {
+            start: fmt(start, this.props.timeFormat),
+            end: fmt(end, this.props.timeFormat),
+            color: c,
+          }
+        : null;
       return {
         id: t.id,
         title: t.title,
         narrow,
         externalLabelStyle,
+        hud,
         done,
         editing: this.state.editingId === t.id,
         timeLabel: fmt(start, this.props.timeFormat) + ' · ' + durLabel(duration),

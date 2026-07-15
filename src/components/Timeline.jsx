@@ -83,6 +83,65 @@ export default function Timeline(props) {
     boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.35)',
   };
 
+  // Live scrubbing HUD: two translucent, glowing pills that track a task's
+  // start (above the leading edge) and end (below the trailing edge) while it's
+  // dragged/resized. pointer-events:none so it never interferes with the drag.
+  const renderHud = (hud) => {
+    if (!hud) return null;
+    const c = hud.color;
+    const pill = {
+      position: 'absolute',
+      padding: '3px 9px',
+      fontSize: '11px',
+      fontWeight: 700,
+      fontFamily: "'JetBrains Mono',monospace",
+      letterSpacing: '.04em',
+      color: '#f5f7fb',
+      background: 'rgba(16,18,26,0.66)',
+      backdropFilter: 'blur(9px) saturate(150%)',
+      WebkitBackdropFilter: 'blur(9px) saturate(150%)',
+      border: '1px solid ' + c + '99',
+      borderRadius: '8px',
+      whiteSpace: 'nowrap',
+      pointerEvents: 'none',
+      zIndex: 20,
+      boxShadow: '0 4px 14px rgba(0,0,0,.5), 0 0 12px ' + c + '80',
+      textShadow: '0 1px 2px rgba(0,0,0,.85)',
+    };
+    // Small diamond tick pointing from each pill toward the card edge.
+    const tick = {
+      position: 'absolute',
+      width: '7px',
+      height: '7px',
+      background: 'rgba(16,18,26,0.66)',
+      borderRight: '1px solid ' + c + '99',
+      borderBottom: '1px solid ' + c + '99',
+      left: '50%',
+    };
+    const startPos = isVertical
+      ? { bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: '10px' }
+      : { bottom: '100%', left: 0, marginBottom: '10px' };
+    const endPos = isVertical
+      ? { top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: '10px' }
+      : { top: '100%', right: 0, marginTop: '10px' };
+    // Start pill sits above the card → tick points down (rotate 45°) from its
+    // bottom. End pill sits below → tick points up from its top.
+    const startTick = { ...tick, top: '100%', transform: 'translate(-50%,-50%) rotate(45deg)' };
+    const endTick = { ...tick, bottom: '100%', transform: 'translate(-50%,50%) rotate(-135deg)' };
+    return (
+      <>
+        <div style={{ ...pill, ...startPos }}>
+          {hud.start}
+          <span style={startTick} />
+        </div>
+        <div style={{ ...pill, ...endPos }}>
+          {hud.end}
+          <span style={endTick} />
+        </div>
+      </>
+    );
+  };
+
   const onTitleKeyDown = (e) => {
     e.stopPropagation();
     if (e.key === 'Enter') {
@@ -271,6 +330,7 @@ export default function Timeline(props) {
               style={t.dotEndStyle}
             />
             <div onMouseDown={t.onResizeDown} style={t.resizeHandleStyle} />
+            {renderHud(t.hud)}
           </div>
         ))}
         <SelectionBox rect={marqueeRect} />
