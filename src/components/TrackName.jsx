@@ -11,11 +11,32 @@ import { createPortal } from 'react-dom';
 // none, so it can never be clipped by the sidebar/column, never steals pointer
 // events, and never disturbs the contentEditable layout (rename, sidebar
 // resize/collapse, and the vertical track headers all keep working).
-export default function TrackName({ name, style, onRename, onKeyDown }) {
+export default function TrackName({ name, style, editing, onDoubleClick, onRename, onKeyDown }) {
   const ref = React.useRef(null);
   const [tip, setTip] = React.useState(null);
 
+  // Entering edit mode: seed the text imperatively (children render null while
+  // editing so re-renders don't clobber typing), then focus + select-all.
+  React.useEffect(() => {
+    if (!editing) return;
+    const el = ref.current;
+    if (!el) return;
+    setTip(null);
+    el.textContent = name || '';
+    const focusSelect = () => {
+      el.focus();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    };
+    requestAnimationFrame(focusSelect);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
   const showTip = () => {
+    if (editing) return;
     const el = ref.current;
     if (!el) return;
     // Don't reveal while the user is editing this name.
@@ -33,20 +54,17 @@ export default function TrackName({ name, style, onRename, onKeyDown }) {
     <>
       <div
         ref={ref}
-        contentEditable
+        contentEditable={editing}
         suppressContentEditableWarning
-        title={name}
+        title={editing ? undefined : name}
+        onDoubleClick={editing ? undefined : onDoubleClick}
         onMouseEnter={showTip}
         onMouseLeave={hideTip}
-        onFocus={hideTip}
-        onBlur={(e) => {
-          hideTip();
-          onRename(e);
-        }}
-        onKeyDown={onKeyDown}
-        style={style}
+        onBlur={editing ? onRename : undefined}
+        onKeyDown={editing ? onKeyDown : undefined}
+        style={{ ...style, cursor: editing ? 'text' : 'grab' }}
       >
-        {name}
+        {editing ? null : name}
       </div>
       {tip &&
         createPortal(

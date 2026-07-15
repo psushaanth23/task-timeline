@@ -180,15 +180,17 @@ export default function Timeline(props) {
         {isVertical && (
           <>
             {lanes.map(lane => (
-              <div key={lane.index} style={lane.chipStyle}>
-                <div
-                  onMouseDown={lane.onDragHandleDown}
-                  title="Drag to reorder"
-                  style={lane.dragHandleStyle}
-                >
+              <div
+                key={lane.index}
+                style={lane.chipStyle}
+                onMouseDown={lane.onRowMouseDown}
+                title="Drag to reorder · double-click name to rename"
+              >
+                <div title="Drag to reorder" style={lane.dragHandleStyle}>
                   ⠿
                 </div>
                 <div
+                  data-no-drag="true"
                   onClick={lane.onCycleColor}
                   title="Click to change track color"
                   style={lane.dotStyle}
@@ -196,12 +198,15 @@ export default function Timeline(props) {
                 <TrackName
                   name={lane.name}
                   style={lane.nameStyleV}
+                  editing={lane.editing}
+                  onDoubleClick={lane.onStartEdit}
                   onRename={lane.onRename}
                   onKeyDown={lane.onKeyDown}
                 />
                 <HoverButton
                   onClick={lane.onDelete}
                   title="Delete track"
+                  data-no-drag="true"
                   style={{
                     background: 'none',
                     border: 'none',

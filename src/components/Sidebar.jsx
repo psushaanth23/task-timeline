@@ -78,15 +78,17 @@ export default function Sidebar(props) {
       {!sidebarCollapsed && notVertical && (
         <>
           {lanes.map(lane => (
-            <div key={lane.index} style={lane.rowStyle}>
-              <div
-                onMouseDown={lane.onDragHandleDown}
-                title="Drag to reorder"
-                style={lane.dragHandleStyle}
-              >
+            <div
+              key={lane.index}
+              style={lane.rowStyle}
+              onMouseDown={lane.onRowMouseDown}
+              title="Drag to reorder · double-click name to rename"
+            >
+              <div title="Drag to reorder" style={lane.dragHandleStyle}>
                 ⠿
               </div>
               <div
+                data-no-drag="true"
                 onClick={lane.onCycleColor}
                 title="Click to change track color"
                 style={lane.dotStyle}
@@ -94,12 +96,15 @@ export default function Sidebar(props) {
               <TrackName
                 name={lane.name}
                 style={lane.nameStyle}
+                editing={lane.editing}
+                onDoubleClick={lane.onStartEdit}
                 onRename={lane.onRename}
                 onKeyDown={lane.onKeyDown}
               />
               <HoverButton
                 onClick={lane.onDelete}
                 title="Delete track"
+                data-no-drag="true"
                 style={{
                   marginLeft: 'auto',
                   flex: 'none',

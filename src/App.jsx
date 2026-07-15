@@ -55,6 +55,7 @@ export default class App extends React.Component {
       marquee: null,
       selection: [],
       trackDrag: null,
+      editingTrack: null,
       wiring: null,
       orientation: 'horizontal',
       sidebarWidth: 150,
@@ -444,12 +445,15 @@ export default class App extends React.Component {
     this.persist(tasks, tracks);
   }
 
+  // A track drag can start anywhere on the row/pill (see onRowMouseDown). We
+  // arm it on mousedown but only "pick up" the track once the pointer actually
+  // moves past a small threshold, so a plain click (or a double-click for
+  // rename) neither reorders nor flashes the drag styling.
   startTrackDrag(index, e) {
-    e.stopPropagation();
     if (e.button !== 0) return;
     e.preventDefault();
     this.setState({
-      trackDrag: { index, overIndex: index, startY: e.clientY, startX: e.clientX, dy: 0, dx: 0 },
+      trackDrag: { index, overIndex: index, startY: e.clientY, startX: e.clientX, dy: 0, dx: 0, moved: false },
     });
     document.addEventListener('mousemove', this.onTrackDragMove);
     document.addEventListener('mouseup', this.onTrackDragUp);
@@ -458,6 +462,8 @@ export default class App extends React.Component {
   onTrackDragMove(e) {
     const d = this.state.trackDrag;
     if (!d) return;
+    const moved = d.moved || Math.abs(e.clientX - d.startX) > 3 || Math.abs(e.clientY - d.startY) > 3;
+    if (!moved) return;
     const V = this.state.orientation === 'vertical';
     const delta = V ? e.clientX - d.startX : e.clientY - d.startY;
     const laneSize = this.laneCross();
@@ -465,14 +471,14 @@ export default class App extends React.Component {
       0,
       Math.min(this.state.tracks.length - 1, d.index + Math.round(delta / laneSize)),
     );
-    this.setState({ trackDrag: { ...d, dy: e.clientY - d.startY, dx: e.clientX - d.startX, overIndex } });
+    this.setState({ trackDrag: { ...d, dy: e.clientY - d.startY, dx: e.clientX - d.startX, overIndex, moved: true } });
   }
 
   onTrackDragUp() {
     document.removeEventListener('mousemove', this.onTrackDragMove);
     document.removeEventListener('mouseup', this.onTrackDragUp);
     const d = this.state.trackDrag;
-    if (d && d.overIndex !== d.index) {
+    if (d && d.moved && d.overIndex !== d.index) {
       const oldTracks = this.state.tracks;
       const tracks = oldTracks.slice();
       const [moved] = tracks.splice(d.index, 1);
@@ -488,6 +494,24 @@ export default class App extends React.Component {
       this.persist(tasks, tracks);
     }
     this.setState({ trackDrag: null });
+  }
+
+  // Track rename is now gated behind a double-click (single click/drag is
+  // reserved for reorder). Entering edit makes the name contentEditable and the
+  // TrackName component focuses + selects it.
+  startTrackEdit(index) {
+    this.setState({ editingTrack: index });
+  }
+
+  commitTrackEdit(index, text) {
+    // Escape cancels without renaming (blur still fires afterwards).
+    if (this._trackEditCancel) {
+      this._trackEditCancel = false;
+      this.setState({ editingTrack: null });
+      return;
+    }
+    this.setState({ editingTrack: null });
+    this.renameTrack(index, text);
   }
 
   startWire(taskId, side, e) {
@@ -949,11 +973,13 @@ export default class App extends React.Component {
     const trackDrag = this.state.trackDrag;
     const lanes = Array.from({ length: laneCount }, (_, i) => {
       const tr = this.trackFor(i);
-      const isDraggingRow = trackDrag && trackDrag.index === i;
-      const isDropTarget = trackDrag && trackDrag.overIndex === i && trackDrag.index !== i;
+      const isDraggingRow = trackDrag && trackDrag.moved && trackDrag.index === i;
+      const isDropTarget =
+        trackDrag && trackDrag.moved && trackDrag.overIndex === i && trackDrag.index !== i;
       return {
         index: i,
         name: tr.name,
+        editing: this.state.editingTrack === i,
         rowStyle: {
           height: laneSize + 'px',
           display: 'flex',
@@ -1039,14 +1065,31 @@ export default class App extends React.Component {
           e.stopPropagation();
           this.deleteTrack(i);
         },
-        onRename: (e) => this.renameTrack(i, e.target.innerText),
+        // The whole row/pill initiates a reorder drag, except while this track
+        // is being renamed (caret must work) and except on the color dot /
+        // delete button (marked data-no-drag), which keep their own click.
+        onRowMouseDown: (e) => {
+          if (this.state.editingTrack === i) return;
+          if (e.target.closest('[data-no-drag]')) return;
+          this.startTrackDrag(i, e);
+        },
+        onStartEdit: (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.startTrackEdit(i);
+        },
+        onRename: (e) => this.commitTrackEdit(i, e.target.innerText),
         onKeyDown: (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
+            this._trackEditCancel = false;
+            e.target.blur();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            this._trackEditCancel = true;
             e.target.blur();
           }
         },
-        onDragHandleDown: (e) => this.startTrackDrag(i, e),
       };
     });
 
