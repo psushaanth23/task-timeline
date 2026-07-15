@@ -1953,6 +1953,19 @@ export default class App extends React.Component {
       },
       contentRef: this.contentRef,
       scrollRef: this.scrollRef,
+      // Wrapper for the timeline's scroll pane. In HORIZONTAL mode the time axis
+      // runs left→right, so this pane owns the horizontal scroll (overflowX
+      // auto). In VERTICAL mode the long axis is time (down the page) and it MUST
+      // scroll together with the sidebar time-ruler, which lives in the outer
+      // board wrapper — so here we keep overflow visible on BOTH axes and let the
+      // board wrapper be the single vertical scroller. (Note: overflowX:auto with
+      // overflowY:visible is illegal in CSS — the browser silently promotes
+      // overflowY to `auto`, which would make this pane its own vertical scroller
+      // and desync it from the ruler. That promotion was the root cause of the
+      // vertical "now" line landing at the wrong hour.)
+      scrollWrapStyle: V
+        ? { flex: 1, minWidth: 0, overflow: 'visible' }
+        : { flex: 1, overflowX: 'auto', overflowY: 'visible' },
       boardRef: this.boardRef,
       onBoardDblClick: this.onBoardDblClick,
       onBoardMouseDown: this.onBoardMouseDown,
@@ -2031,6 +2044,12 @@ export default class App extends React.Component {
       display: 'flex',
       overflowY: 'auto',
       overflowX: 'hidden',
+      // Vertical mode: this wrapper is the SINGLE vertical scroller for both the
+      // sidebar time-ruler and the timeline content, so the "now" line and tasks
+      // stay glued to the correct hour tick while scrolling. align-items:flex-start
+      // lets both columns grow to their full content height (instead of stretching
+      // to the viewport and scrolling independently).
+      ...(vals.isVertical ? { alignItems: 'flex-start' } : null),
     };
     const tp = this.state.tagPicker;
     const pickerTrack = tp ? this.state.tracks[tp.trackIndex] : null;

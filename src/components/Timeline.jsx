@@ -9,6 +9,7 @@ export default function Timeline(props) {
   const {
     scrollRef,
     contentRef,
+    scrollWrapStyle,
     rulerStyle,
     isVertical,
     notVertical,
@@ -175,7 +176,7 @@ export default function Timeline(props) {
   };
 
   return (
-    <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'visible' }}>
+    <div ref={scrollRef} style={scrollWrapStyle || { flex: 1, overflowX: 'auto', overflowY: 'visible' }}>
       <div style={rulerStyle}>
         {notVertical && (
           <>
