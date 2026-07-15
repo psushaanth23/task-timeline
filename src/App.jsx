@@ -400,11 +400,21 @@ export default class App extends React.Component {
     const px = this.timeDensity();
     const V = this.state.orientation === 'vertical';
     if (V) {
-      const b = this.boardRef.current;
-      if (!b) return;
-      const target = Math.max(0, currentMin() * px - b.clientHeight * 0.4);
-      if (smooth === false) b.scrollTop = target;
-      else b.scrollTo({ top: target, behavior: 'smooth' });
+      // The now-line lives inside the content div, which sits below the sticky
+      // track-header row (barSize) inside the scroll area. Depending on how the
+      // browser resolves overflow, the vertical scroller can be either the
+      // timeline's own scroll div or the outer board wrapper, so scroll
+      // whichever one actually overflows.
+      const barSize = LAYOUT.trackHeaderH;
+      const nowPos = barSize + currentMin() * px;
+      const candidates = [this.scrollRef.current, this.boardRef.current];
+      candidates.forEach((el) => {
+        if (!el) return;
+        if (el.scrollHeight <= el.clientHeight + 1) return;
+        const target = Math.max(0, nowPos - el.clientHeight * 0.4);
+        if (smooth === false) el.scrollTop = target;
+        else el.scrollTo({ top: target, behavior: 'smooth' });
+      });
     } else {
       const sc = this.scrollRef.current;
       if (!sc) return;
@@ -1008,20 +1018,27 @@ export default class App extends React.Component {
       const end = start + duration;
       let alpha;
       let urgent = false;
-      const glow = '0 6px 18px rgba(0,0,0,.45)';
+      // Aero-glass: a translucent white top sheen over the track-hue tint, plus
+      // an inset highlight edge for the frosted-glass look.
+      const sheen =
+        'linear-gradient(180deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.045) 20%, rgba(255,255,255,0) 44%)';
+      const glow = 'inset 0 1px 0 rgba(255,255,255,.22), 0 6px 18px rgba(0,0,0,.4)';
+      // Whole opacity spectrum shifted down so every card is more see-through.
       if (nowMin < start) {
-        alpha = 0.12;
+        alpha = 0.06;
       } else if (nowMin >= end) {
-        alpha = 0.3;
+        alpha = 0.16;
       } else {
         const prog = Math.max(0, Math.min(1, (nowMin - start) / duration));
-        alpha = 0.12 + prog * 0.45;
+        alpha = 0.06 + prog * 0.28;
         if (end - nowMin <= Math.min(15, duration * 0.25)) {
           urgent = true;
         }
       }
-      let bg = 'linear-gradient(160deg, ' + hexToRgba(c, alpha + 0.12) + ', ' + hexToRgba(c, alpha) + ')';
-      let borderColor = hexToRgba(c, Math.min(0.7, alpha + 0.22));
+      let bg =
+        sheen +
+        ', linear-gradient(160deg, ' + hexToRgba(c, alpha + 0.1) + ', ' + hexToRgba(c, alpha) + ')';
+      let borderColor = hexToRgba(c, Math.min(0.5, alpha + 0.2));
       let textColor = '#f5f6fa';
       if (done) {
         bg = 'linear-gradient(160deg, #16171d, #0f1014)';
@@ -1100,6 +1117,8 @@ export default class App extends React.Component {
           position: 'absolute',
           ...rectStyle,
           background: bg,
+          backdropFilter: done ? undefined : 'blur(8px)',
+          WebkitBackdropFilter: done ? undefined : 'blur(8px)',
           color: textColor,
           borderRadius: '11px',
           padding: V ? '11px 6px' : '6px 11px',
@@ -1113,7 +1132,7 @@ export default class App extends React.Component {
           textDecoration: done ? 'line-through' : 'none',
           opacity: done ? 0.85 : 1,
           zIndex: isDragging || isGroupMoving ? 6 : 3,
-          border: '1.5px solid ' + borderColor,
+          border: '1px solid ' + borderColor,
           boxShadow,
           animation: urgent ? 'pulseUrgent 1.1s ease-in-out infinite' : undefined,
           transition:
