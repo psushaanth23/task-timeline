@@ -1,5 +1,5 @@
 import React from 'react';
-import { hexToRgba } from '../lib/color.js';
+import TagChip from './TagChip.jsx';
 
 // Renders a track's assigned tags as small tinted glass chips directly beneath
 // the track name, plus a subtle "+" affordance that opens the tag picker. The
@@ -21,26 +21,7 @@ export default function TrackTags({ tags, onAdd }) {
       }}
     >
       {tags.map((tag) => (
-        <span
-          key={tag.id}
-          title={tag.label}
-          style={{
-            fontSize: '11px',
-            lineHeight: 1.35,
-            fontWeight: 600,
-            padding: '1px 8px',
-            borderRadius: '999px',
-            color: tag.color,
-            background: hexToRgba(tag.color, 0.16),
-            border: '1px solid ' + hexToRgba(tag.color, 0.5),
-            maxWidth: '100%',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {tag.label}
-        </span>
+        <TagChip key={tag.id} label={tag.label} color={tag.color} />
       ))}
       <button
         type="button"

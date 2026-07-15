@@ -1567,7 +1567,7 @@ export default class App extends React.Component {
       // line. The cross-axis card size differs by orientation: vertical cards
       // grow with duration (len), horizontal cards are the fixed lane height.
       const TITLE_LINE_PX = 16; // ~13px * 1.25 line-height
-      const titleAvailPx = (V ? len : laneLen) - (V ? 22 : 12) - 17; // padding + time label
+      const titleAvailPx = (V ? len : laneLen) - (V ? 22 : 12) - 20; // padding + time label + gap
       const titleLines = Math.max(1, Math.min(8, Math.floor(titleAvailPx / TITLE_LINE_PX)));
       const externalLabelStyle = {
         position: 'absolute',
@@ -1658,7 +1658,7 @@ export default class App extends React.Component {
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          gap: '1px',
+          gap: '4px',
           textDecoration: 'none',
           opacity: done ? 0.85 : 1,
           zIndex: isDragging || isGroupMoving ? 6 : 3,

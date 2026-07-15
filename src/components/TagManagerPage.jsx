@@ -1,5 +1,6 @@
 import React from 'react';
 import { hexToRgba } from '../lib/color.js';
+import TagChip from './TagChip.jsx';
 
 // Tag Manager page (hash route #/tags). Lists every global tag with an inline-
 // editable name, a palette swatch color picker, a usage count, and a delete
@@ -74,29 +75,38 @@ function TagRow({ tag, usage, palette, onRename, onSetColor, onDelete }) {
           aria-label="Tag name"
           style={inputStyle}
         />
-        <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          {palette.map((c) => {
-            const active = c.toLowerCase() === (tag.color || '').toLowerCase();
-            return (
-              <button
-                key={c}
-                type="button"
-                onClick={() => onSetColor(tag.id, c)}
-                title={c}
-                aria-label={'Set color ' + c}
-                style={{
-                  width: '18px',
-                  height: '18px',
-                  borderRadius: '50%',
-                  background: c,
-                  cursor: 'pointer',
-                  padding: 0,
-                  border: active ? '2px solid #fff' : '2px solid transparent',
-                  boxShadow: active ? '0 0 8px ' + c + 'aa' : 'none',
-                }}
-              />
-            );
-          })}
+        <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            {palette.map((c) => {
+              const active = c.toLowerCase() === (tag.color || '').toLowerCase();
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => onSetColor(tag.id, c)}
+                  title={c}
+                  aria-label={'Set color ' + c}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    background: c,
+                    cursor: 'pointer',
+                    padding: 0,
+                    border: active ? '2px solid #fff' : '2px solid transparent',
+                    boxShadow: active ? '0 0 8px ' + c + 'aa' : 'none',
+                  }}
+                />
+              );
+            })}
+          </div>
+          {/* Live preview of the exact on-track chip; updates as name/color change. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+            <span style={{ fontSize: '10px', color: 'rgba(231,233,238,.4)', fontFamily: "'JetBrains Mono',monospace" }}>
+              preview
+            </span>
+            <TagChip label={name.trim() || tag.label} color={tag.color} title="Preview" />
+          </div>
         </div>
       </div>
       <div
