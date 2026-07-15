@@ -95,6 +95,9 @@ export default class App extends React.Component {
     });
     this.undoStack = [];
     this.redoStack = [];
+    // In-app clipboard for task copy/paste (Ctrl/Cmd+C / +V). Holds field
+    // templates (no ids) so repeated paste keeps minting fresh duplicates.
+    this._clipboard = [];
     // Disk-persistence state: disk is the source of truth, localStorage is a
     // fast-paint cache + offline fallback. `_hydrated` gates disk writes until
     // the async disk load resolves; `_dirtyBeforeHydration` records whether the
@@ -406,6 +409,46 @@ export default class App extends React.Component {
     this.persist(tasks);
   }
 
+  // Copy the currently-selected tasks into the in-app clipboard as id-less field
+  // templates. Returns true when something was captured (so the caller can
+  // preventDefault only then and let native copy work otherwise).
+  copySelection() {
+    if (!this.state.selection.length) return false;
+    const sel = new Set(this.state.selection);
+    this._clipboard = this.state.tasks
+      .filter((t) => sel.has(t.id))
+      .map((t) => ({
+        title: t.title,
+        lane: t.lane,
+        start: t.start,
+        duration: t.duration,
+        done: !!t.done,
+        parentIds: [...(t.parentIds || [])],
+      }));
+    return true;
+  }
+
+  // Paste clipboard tasks as duplicates: same start, track, name and duration as
+  // the source (overlap is expected). Each copy gets a fresh id; the pasted
+  // tasks become the new selection so a follow-up drag moves the copies. Goes
+  // through persist() so it saves to disk/localStorage and is undoable.
+  pasteClipboard() {
+    if (!this._clipboard.length) return false;
+    const stamp = Date.now();
+    const copies = this._clipboard.map((c, i) => ({
+      id: 'id' + stamp + '_' + i + '_' + Math.floor(Math.random() * 9999),
+      title: c.title,
+      lane: c.lane,
+      start: c.start,
+      duration: c.duration,
+      done: !!c.done,
+      parentIds: [...(c.parentIds || [])],
+    }));
+    this.setState({ selection: copies.map((c) => c.id) });
+    this.persist([...this.state.tasks, ...copies]);
+    return true;
+  }
+
   onDocKeyDown(e) {
     const el = document.activeElement;
     const typing =
@@ -425,6 +468,16 @@ export default class App extends React.Component {
     if (mod && (e.key === 'y' || e.key === 'Y')) {
       e.preventDefault();
       this.redo();
+      return;
+    }
+    if (mod && (e.key === 'c' || e.key === 'C')) {
+      // Only intercept when we actually have tasks selected; otherwise let the
+      // browser's normal copy proceed.
+      if (this.copySelection()) e.preventDefault();
+      return;
+    }
+    if (mod && (e.key === 'v' || e.key === 'V')) {
+      if (this.pasteClipboard()) e.preventDefault();
       return;
     }
     if (e.key === 'Delete' || e.key === 'Backspace') {

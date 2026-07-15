@@ -24,7 +24,6 @@ export const PALETTE = [
   '#7c3aed', // deep violet / plum
   '#d946ef', // fuchsia
   '#ec4899', // hot pink
-  '#f43f5e', // rose
 ];
 
 export const TRACK_NAMES = [
