@@ -47,6 +47,17 @@ button {
   font-family: inherit;
 }
 
+/* Re-enable text selection/editing on genuinely editable fields even though the
+   app root disables user-select to prevent highlight-on-drag. */
+input,
+textarea,
+select,
+[contenteditable="true"],
+[contenteditable=""] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 @keyframes popIn {
   from {
     opacity: 0;

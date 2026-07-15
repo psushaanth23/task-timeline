@@ -286,6 +286,7 @@ export default class App extends React.Component {
   startTrackDrag(index, e) {
     e.stopPropagation();
     if (e.button !== 0) return;
+    e.preventDefault();
     this.setState({
       trackDrag: { index, overIndex: index, startY: e.clientY, startX: e.clientX, dy: 0, dx: 0 },
     });
@@ -514,6 +515,7 @@ export default class App extends React.Component {
     if (e.button !== 0) return;
     const el = this.contentRef.current;
     if (!el) return;
+    e.preventDefault();
     const rect = el.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
@@ -573,6 +575,7 @@ export default class App extends React.Component {
   onCardMouseDown(task, e) {
     e.stopPropagation();
     if (e.button !== 0) return;
+    e.preventDefault();
     if (this.state.selection.includes(task.id)) {
       this.startGroupDrag(e);
     } else {
@@ -670,6 +673,7 @@ export default class App extends React.Component {
   startResize(task, e) {
     e.stopPropagation();
     if (e.button !== 0) return;
+    e.preventDefault();
     this.setState({
       resize: { id: task.id, startClientX: e.clientX, startClientY: e.clientY, curDuration: task.duration, moved: false },
     });
@@ -1469,6 +1473,10 @@ export default class App extends React.Component {
       flexDirection: 'column',
       height: '100vh',
       overflow: 'hidden',
+      // Suppress native text selection while dragging/resizing/marquee-selecting.
+      // Editable fields (inputs + track-name contenteditable) opt back in via CSS.
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
       // Deep-space backdrop with a faint Earth-limb / atmosphere glow arcing
       // across the bottom. Kept very dark and low-contrast for readability.
       background:
