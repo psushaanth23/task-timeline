@@ -18,7 +18,6 @@ export default function TrackTags({ tags, onAdd }) {
         alignItems: 'center',
         gap: '4px',
         marginTop: hasTags ? '3px' : 0,
-        cursor: 'default',
       }}
     >
       {tags.map((tag) => (
