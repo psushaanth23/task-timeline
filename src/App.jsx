@@ -1318,26 +1318,44 @@ export default class App extends React.Component {
     }
 
     const halfHour = 30 * px;
+    const quarter = 15 * px;
+    // Faint quarter-hour lines at :15 and :45 — a 30-min-period repeating line
+    // offset by 15 min, drawn fainter than the hour/:30 lines (hierarchy:
+    // hour/:30 .07 > :15/:45 .03).
+    const quarterLines = (dir) =>
+      'repeating-linear-gradient(' +
+      dir +
+      ', transparent 0, transparent ' +
+      quarter +
+      'px, rgba(255,255,255,.03) ' +
+      quarter +
+      'px, rgba(255,255,255,.03) ' +
+      (quarter + 1) +
+      'px, transparent ' +
+      (quarter + 1) +
+      'px, transparent ' +
+      halfHour +
+      'px)';
+    const halfLines = (dir) =>
+      'repeating-linear-gradient(' +
+      dir +
+      ', rgba(255,255,255,.07) 0, rgba(255,255,255,.07) 1px, transparent 1px, transparent ' +
+      halfHour +
+      'px)';
     const gridOverlayStyle = V
       ? {
           position: 'absolute',
           inset: 0,
           pointerEvents: 'none',
           zIndex: 1,
-          backgroundImage:
-            'repeating-linear-gradient(to bottom, rgba(255,255,255,.07) 0, rgba(255,255,255,.07) 1px, transparent 1px, transparent ' +
-            halfHour +
-            'px)',
+          backgroundImage: quarterLines('to bottom') + ',' + halfLines('to bottom'),
         }
       : {
           position: 'absolute',
           inset: 0,
           pointerEvents: 'none',
           zIndex: 1,
-          backgroundImage:
-            'repeating-linear-gradient(to right, rgba(255,255,255,.07) 0, rgba(255,255,255,.07) 1px, transparent 1px, transparent ' +
-            halfHour +
-            'px)',
+          backgroundImage: quarterLines('to right') + ',' + halfLines('to right'),
         };
     const contentW = V ? trackAxisSize : timeAxisSize;
     const contentH = V ? timeAxisSize : trackAxisSize;
