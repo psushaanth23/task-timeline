@@ -13,9 +13,12 @@ export function loadData() {
   return null;
 }
 
-export function saveData(tasks, tracks, origin, tags) {
+export function saveData(tasks, tracks, origin, tags, deletedTracks) {
   try {
-    localStorage.setItem(DATA_KEY, JSON.stringify({ tasks, tracks, origin, tags }));
+    localStorage.setItem(
+      DATA_KEY,
+      JSON.stringify({ tasks, tracks, origin, tags, deletedTracks }),
+    );
   } catch (e) {
     /* ignore quota / privacy-mode errors */
   }

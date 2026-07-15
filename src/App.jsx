@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar.jsx';
 import Timeline from './components/Timeline.jsx';
 import { PALETTE, LAYOUT, genTrackId, genTagId, makeTracks, seedTasks } from './lib/constants.js';
 import TagPicker from './components/TagPicker.jsx';
+import ArchivePage from './components/ArchivePage.jsx';
 import { fmt, fmtHour, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
@@ -61,6 +62,11 @@ export default class App extends React.Component {
       // on track.tagIds. tagPicker holds the open popover's { trackIndex, rect }.
       tags: [],
       tagPicker: null,
+      // Soft-delete archive: deleted tracks are moved here (with their tasks,
+      // tagIds and a deletedAt stamp) instead of being destroyed, and are
+      // viewable/restorable from the #/archive page.
+      deletedTracks: [],
+      route: typeof window !== 'undefined' && window.location.hash === '#/archive' ? 'archive' : 'timeline',
       wiring: null,
       orientation: 'horizontal',
       sidebarWidth: 150,
@@ -94,6 +100,7 @@ export default class App extends React.Component {
     this._dirtyBeforeHydration = false;
     this._diskTimer = null;
     this.onDocKeyDown = this.onDocKeyDown.bind(this);
+    this.onHashChange = this.onHashChange.bind(this);
   }
 
   // Time density (px per minute) for the current orientation. Vertical mode
@@ -132,6 +139,29 @@ export default class App extends React.Component {
     return saved && Array.isArray(saved.tags) ? saved.tags : [];
   }
 
+  // Deleted-tracks archive. Persist form stores each archived track's tasks in
+  // the absolute (startMs) form, mirroring active tasks, so restore keeps the
+  // exact date+time regardless of the origin at reload. Defaults to [] so
+  // pre-archive saved state still loads.
+  serializeDeleted(deletedTracks, originMs) {
+    return (deletedTracks || []).map((d) => ({
+      ...d,
+      tasks: this.serializeTasks(d.tasks || [], originMs),
+    }));
+  }
+
+  hydrateDeleted(rawDeleted, originMs) {
+    if (!Array.isArray(rawDeleted)) return [];
+    return rawDeleted.map((d) => ({
+      id: d.id || genTrackId(),
+      name: d.name || 'Untitled',
+      color: d.color || PALETTE[0],
+      tagIds: Array.isArray(d.tagIds) ? d.tagIds : [],
+      deletedAt: typeof d.deletedAt === 'number' ? d.deletedAt : Date.now(),
+      tasks: this.hydrateTasks(d.tasks || [], originMs),
+    }));
+  }
+
   // Persist form: each task carries an absolute `startMs` so the file is
   // origin-independent and round-trips a real date+time.
   serializeTasks(tasks, originMs) {
@@ -152,12 +182,13 @@ export default class App extends React.Component {
   }
 
   // Write the local (localStorage) cache in the absolute persist form.
-  saveLocal(tasks, tracks, tags) {
+  saveLocal(tasks, tracks, tags, deleted) {
     saveData(
       this.serializeTasks(tasks, this.state.originMs),
       tracks,
       this.state.originMs,
       tags ?? this.state.tags,
+      this.serializeDeleted(deleted ?? this.state.deletedTracks, this.state.originMs),
     );
   }
 
@@ -171,6 +202,7 @@ export default class App extends React.Component {
         tasks,
         tracks: tr,
         tags: this.normalizeTags(s),
+        deletedTracks: this.hydrateDeleted(s.deletedTracks, originMs),
         originMs,
         nowMin: minutesSince(originMs),
       });
@@ -187,6 +219,7 @@ export default class App extends React.Component {
     }
     this.timer = setInterval(() => this.setState({ nowMin: minutesSince(this.state.originMs) }), 15000);
     document.addEventListener('keydown', this.onDocKeyDown);
+    window.addEventListener('hashchange', this.onHashChange);
     // Best-effort flush of any pending debounced disk write on page unload.
     this._onBeforeUnload = () => this.flushDiskSave();
     window.addEventListener('beforeunload', this._onBeforeUnload);
@@ -213,6 +246,7 @@ export default class App extends React.Component {
       tasks: this.serializeTasks(this.state.tasks, this.state.originMs),
       tracks: this.state.tracks,
       tags: this.state.tags,
+      deletedTracks: this.serializeDeleted(this.state.deletedTracks, this.state.originMs),
       origin: this.state.originMs,
       view: this.currentView(),
     };
@@ -252,6 +286,7 @@ export default class App extends React.Component {
           tasks,
           tracks: tr,
           tags: this.normalizeTags(disk),
+          deletedTracks: this.hydrateDeleted(disk.deletedTracks, originMs),
           originMs,
           nowMin: minutesSince(originMs),
           orientation: view.orientation || this.state.orientation,
@@ -280,6 +315,7 @@ export default class App extends React.Component {
     clearInterval(this.timer);
     this.flushDiskSave();
     document.removeEventListener('keydown', this.onDocKeyDown);
+    window.removeEventListener('hashchange', this.onHashChange);
     window.removeEventListener('beforeunload', this._onBeforeUnload);
     this.scroller.stop();
     this.removeBoardListeners();
@@ -291,31 +327,44 @@ export default class App extends React.Component {
     document.removeEventListener('mouseup', this.onSidebarResizeUp);
   }
 
-  persist(tasks, tracks, tags) {
+  persist(tasks, tracks, tags, deleted) {
     const t = tasks || this.state.tasks;
     const tr = tracks || this.state.tracks;
     const tg = tags || this.state.tags;
+    const del = deleted || this.state.deletedTracks;
     // Snapshot the pre-change state for undo (arrays are always replaced
     // immutably, so holding references is safe).
-    this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks, tags: this.state.tags });
+    this.undoStack.push({
+      tasks: this.state.tasks,
+      tracks: this.state.tracks,
+      tags: this.state.tags,
+      deletedTracks: this.state.deletedTracks,
+    });
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
-    this.saveLocal(t, tr, tg);
-    this.setState({ tasks: t, tracks: tr, tags: tg });
+    this.saveLocal(t, tr, tg, del);
+    this.setState({ tasks: t, tracks: tr, tags: tg, deletedTracks: del });
     this.syncDisk();
   }
 
   undo() {
     if (!this.undoStack.length) return;
     const prev = this.undoStack.pop();
-    this.redoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks, tags: this.state.tags });
+    this.redoStack.push({
+      tasks: this.state.tasks,
+      tracks: this.state.tracks,
+      tags: this.state.tags,
+      deletedTracks: this.state.deletedTracks,
+    });
     const prevTags = prev.tags ?? this.state.tags;
-    this.saveLocal(prev.tasks, prev.tracks, prevTags);
+    const prevDeleted = prev.deletedTracks ?? this.state.deletedTracks;
+    this.saveLocal(prev.tasks, prev.tracks, prevTags, prevDeleted);
     const liveIds = new Set(prev.tasks.map((t) => t.id));
     this.setState({
       tasks: prev.tasks,
       tracks: prev.tracks,
       tags: prevTags,
+      deletedTracks: prevDeleted,
       selection: this.state.selection.filter((id) => liveIds.has(id)),
     });
     this.syncDisk();
@@ -324,14 +373,21 @@ export default class App extends React.Component {
   redo() {
     if (!this.redoStack.length) return;
     const next = this.redoStack.pop();
-    this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks, tags: this.state.tags });
+    this.undoStack.push({
+      tasks: this.state.tasks,
+      tracks: this.state.tracks,
+      tags: this.state.tags,
+      deletedTracks: this.state.deletedTracks,
+    });
     const nextTags = next.tags ?? this.state.tags;
-    this.saveLocal(next.tasks, next.tracks, nextTags);
+    const nextDeleted = next.deletedTracks ?? this.state.deletedTracks;
+    this.saveLocal(next.tasks, next.tracks, nextTags, nextDeleted);
     const liveIds = new Set(next.tasks.map((t) => t.id));
     this.setState({
       tasks: next.tasks,
       tracks: next.tracks,
       tags: nextTags,
+      deletedTracks: nextDeleted,
       selection: this.state.selection.filter((id) => liveIds.has(id)),
     });
     this.syncDisk();
@@ -533,16 +589,74 @@ export default class App extends React.Component {
     this.persist(null, null, tags);
   }
 
+  // Hash-based route: '#/archive' shows the Deleted Tracks page; anything else
+  // shows the timeline. Kept dependency-free (no react-router).
+  onHashChange() {
+    this.setState({ route: window.location.hash === '#/archive' ? 'archive' : 'timeline' });
+  }
+
+  goArchive() {
+    window.location.hash = '#/archive';
+    this.setState({ route: 'archive' });
+  }
+
+  goTimeline() {
+    // Clear the hash without leaving a bare '#'; then sync route (hashchange
+    // may not fire if the hash was already empty).
+    if (window.location.hash) {
+      history.pushState('', document.title, window.location.pathname + window.location.search);
+    }
+    this.setState({ route: 'timeline' });
+  }
+
+  // Soft delete: move the track (with its tasks, tagIds and a timestamp) into
+  // the archive instead of destroying it, then remove it from the active board.
   deleteTrack(index) {
     if (this.state.tracks.length <= 1) return;
-    const removedIds = this.state.tasks.filter((t) => t.lane === index).map((t) => t.id);
+    const track = this.state.tracks[index];
+    const removedTasks = this.state.tasks.filter((t) => t.lane === index);
+    const removedIds = removedTasks.map((t) => t.id);
     const tracks = this.state.tracks.filter((_, i) => i !== index);
     const tasks = this.state.tasks
       .filter((t) => t.lane !== index)
       .map((t) => (t.lane > index ? { ...t, lane: t.lane - 1 } : t))
       .map((t) => ({ ...t, parentIds: (t.parentIds || []).filter((pid) => !removedIds.includes(pid)) }));
+    const entry = {
+      id: track.id,
+      name: track.name,
+      color: track.color,
+      tagIds: track.tagIds || [],
+      tasks: removedTasks.map((t) => ({ ...t })),
+      deletedAt: Date.now(),
+    };
+    const deletedTracks = [entry, ...this.state.deletedTracks];
     this.setState({ selection: this.state.selection.filter((id) => !removedIds.includes(id)) });
-    this.persist(tasks, tracks);
+    this.persist(tasks, tracks, null, deletedTracks);
+  }
+
+  // Bring an archived track back as a new (last) lane with its tasks intact.
+  restoreTrack(id) {
+    const entry = this.state.deletedTracks.find((d) => d.id === id);
+    if (!entry) return;
+    const deletedTracks = this.state.deletedTracks.filter((d) => d.id !== id);
+    const newLane = this.state.tracks.length;
+    const track = { id: entry.id, name: entry.name, color: entry.color, tagIds: entry.tagIds || [] };
+    const tracks = [...this.state.tracks, track];
+    const liveIds = new Set(this.state.tasks.map((t) => t.id));
+    const restored = (entry.tasks || []).map((t) => ({
+      ...t,
+      lane: newLane,
+      // Drop dangling parent refs to tasks that no longer exist.
+      parentIds: (t.parentIds || []).filter((pid) => liveIds.has(pid) || entry.tasks.some((x) => x.id === pid)),
+    }));
+    const tasks = [...this.state.tasks, ...restored];
+    this.persist(tasks, tracks, null, deletedTracks);
+  }
+
+  // Remove an archived track from the archive permanently.
+  purgeDeletedTrack(id) {
+    const deletedTracks = this.state.deletedTracks.filter((d) => d.id !== id);
+    this.persist(null, null, null, deletedTracks);
   }
 
   // A track drag can start anywhere on the row/pill (see onRowMouseDown). We
@@ -1803,6 +1917,8 @@ export default class App extends React.Component {
       zoomBarUnit: V ? 'px' : 'px/min',
       onZoomBarChange: V ? (w) => this.setTrackWidth(w) : (z) => this.setZoom(z),
       addTrack: () => this.addTrack(),
+      onOpenArchive: () => this.goArchive(),
+      archiveCount: this.state.deletedTracks.length,
       editingId: this.state.editingId,
       editingTitle: editingTask ? editingTask.title : '',
       onCommitTitle: (id, text) => this.commitInlineEdit(id, text),
@@ -1811,6 +1927,17 @@ export default class App extends React.Component {
   }
 
   render() {
+    if (this.state.route === 'archive') {
+      return (
+        <ArchivePage
+          deletedTracks={this.state.deletedTracks}
+          tags={this.state.tags}
+          onRestore={(id) => this.restoreTrack(id)}
+          onPurge={(id) => this.purgeDeletedTrack(id)}
+          onBack={() => this.goTimeline()}
+        />
+      );
+    }
     const vals = this.computeVals();
     const rootStyle = {
       display: 'flex',
