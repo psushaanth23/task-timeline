@@ -1280,6 +1280,21 @@ export default class App extends React.Component {
           cursor: 'pointer',
           zIndex: 1,
         },
+        // Vertical mode: tracks are columns, so the color accent runs across the
+        // TOP edge of the header (full width, ~2px tall, flush top, rounded
+        // bottom ends) instead of down the left.
+        barStyleV: {
+          position: 'absolute',
+          top: 0,
+          left: '6%',
+          right: '6%',
+          height: '2px',
+          borderRadius: '0 0 3px 3px',
+          background: tr.color,
+          boxShadow: '0 0 10px ' + tr.color + '66, 0 5px 14px -5px ' + tr.color + '55',
+          cursor: 'pointer',
+          zIndex: 1,
+        },
         nameStyle: {
           fontSize: '12.5px',
           color: 'rgba(231,233,238,.75)',
