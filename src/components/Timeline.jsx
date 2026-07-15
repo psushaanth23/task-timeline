@@ -2,6 +2,7 @@ import React from 'react';
 import { HoverButton } from './ui.jsx';
 import ChainLink from './ChainLink.jsx';
 import SelectionBox from './SelectionBox.jsx';
+import TrackName from './TrackName.jsx';
 
 export default function Timeline(props) {
   const {
@@ -192,15 +193,12 @@ export default function Timeline(props) {
                   title="Click to change track color"
                   style={lane.dotStyle}
                 />
-                <div
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={lane.onRename}
-                  onKeyDown={lane.onKeyDown}
+                <TrackName
+                  name={lane.name}
                   style={lane.nameStyleV}
-                >
-                  {lane.name}
-                </div>
+                  onRename={lane.onRename}
+                  onKeyDown={lane.onKeyDown}
+                />
                 <HoverButton
                   onClick={lane.onDelete}
                   title="Delete track"
