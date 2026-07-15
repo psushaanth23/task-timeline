@@ -1,6 +1,7 @@
 import React from 'react';
 import { HoverButton } from './ui.jsx';
 import ZoomBar from './ZoomBar.jsx';
+import HelpPanel from './HelpPanel.jsx';
 
 // Minimal orbit/timeline brand mark — a planet on an inclined orbit ring with
 // a small satellite, subtle teal→indigo gradient and a soft glow. Crisp at 38px.
@@ -93,6 +94,7 @@ export default function Header(props) {
   const goVertical = () => {
     if (!isVertical) toggleOrientation();
   };
+  const [helpOpen, setHelpOpen] = React.useState(false);
 
   return (
     <header
@@ -149,23 +151,10 @@ export default function Header(props) {
                 whiteSpace: 'nowrap',
                 flex: 'none',
               }}
-            >
-              {todayLabel}
+          >
+            {todayLabel}
             </span>
           </h1>
-          <p
-            style={{
-              margin: '2px 0 0',
-              fontSize: '12.5px',
-              color: 'rgba(231,233,238,.5)',
-              fontFamily: "'JetBrains Mono',monospace",
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            Dbl-click empty to add · dbl-click task to edit · triple-click = done · Del · ⌘Z undo
-          </p>
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 'none' }}>
@@ -229,7 +218,35 @@ export default function Header(props) {
           unit={zoomBarUnit}
           onChange={onZoomBarChange}
         />
+        <HoverButton
+          onClick={() => setHelpOpen(true)}
+          title="How to use"
+          aria-label="How to use"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '34px',
+            height: '34px',
+            flex: 'none',
+            padding: 0,
+            background: 'rgba(255,255,255,.05)',
+            border: '1px solid rgba(255,255,255,.12)',
+            borderRadius: '50%',
+            color: 'rgba(231,233,238,.7)',
+            cursor: 'pointer',
+            fontWeight: 700,
+          }}
+          hoverStyle={{ background: 'rgba(125,211,252,.16)', color: '#7dd3fc', borderColor: 'rgba(125,211,252,.45)' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </HoverButton>
       </div>
+      {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
     </header>
   );
 }
