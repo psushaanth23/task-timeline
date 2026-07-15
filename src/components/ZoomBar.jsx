@@ -1,13 +1,7 @@
 import React from 'react';
 
 export default function ZoomBar(props) {
-  const {
-    zoom,
-    min = 1,
-    max = 12,
-    step = 0.5,
-    onZoomChange,
-  } = props;
+  const { value, min = 1, max = 12, step = 0.5, label = 'Density', unit = 'px/min', onChange } = props;
 
   const barStyle = {
     display: 'flex',
@@ -26,6 +20,7 @@ export default function ZoomBar(props) {
     color: 'rgba(231,233,238,.45)',
     fontWeight: 600,
     textTransform: 'uppercase',
+    minWidth: '86px',
   };
 
   const hintStyle = {
@@ -57,16 +52,17 @@ export default function ZoomBar(props) {
     fontFamily: "'JetBrains Mono',monospace",
     fontSize: '12px',
     color: '#22d3ee',
-    minWidth: '72px',
+    minWidth: '84px',
     textAlign: 'right',
   };
 
-  const decrease = () => onZoomChange(Math.max(min, +(zoom - step).toFixed(2)));
-  const increase = () => onZoomChange(Math.min(max, +(zoom + step).toFixed(2)));
+  const round2 = (n) => +Number(n).toFixed(2);
+  const decrease = () => onChange(Math.max(min, round2(value - step)));
+  const increase = () => onChange(Math.min(max, round2(value + step)));
 
   return (
     <div style={barStyle}>
-      <span style={labelStyle}>Density</span>
+      <span style={labelStyle}>{label}</span>
       <button type="button" style={buttonStyle} onClick={decrease}>
         −
       </button>
@@ -76,15 +72,17 @@ export default function ZoomBar(props) {
         min={min}
         max={max}
         step={step}
-        value={zoom}
-        onChange={(e) => onZoomChange(parseFloat(e.target.value))}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
         style={sliderStyle}
       />
       <span style={hintStyle}>»</span>
       <button type="button" style={buttonStyle} onClick={increase}>
         +
       </button>
-      <span style={readoutStyle}>{zoom} px/min</span>
+      <span style={readoutStyle}>
+        {value} {unit}
+      </span>
     </div>
   );
 }

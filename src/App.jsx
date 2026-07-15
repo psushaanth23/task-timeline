@@ -3,7 +3,6 @@ import Header from './components/Header.jsx';
 import ZoomBar from './components/ZoomBar.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Timeline from './components/Timeline.jsx';
-import TaskModal from './components/TaskModal.jsx';
 import { PALETTE, LAYOUT, genTrackId, makeTracks, seedTasks } from './lib/constants.js';
 import { currentMin, minToInput, inputToMin, fmt, fmtHour, durLabel } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
@@ -11,9 +10,17 @@ import { bezier } from './lib/geometry.js';
 import { loadData, saveData, loadView, saveView } from './lib/storage.js';
 import { EdgeAutoScroller } from './lib/autoscroll.js';
 
+// Horizontal mode: slider controls time density (pixels per minute).
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 12;
 const ZOOM_STEP = 0.5;
+// Vertical mode: slider controls the track-column width (pixels) instead,
+// while the time axis keeps a fixed, compact density.
+const TRACKW_MIN = 90;
+const TRACKW_MAX = 320;
+const TRACKW_STEP = 10;
+const TRACKW_DEFAULT = 150;
+const VERTICAL_PX = 1.5;
 
 export default class App extends React.Component {
   constructor(props) {
@@ -43,6 +50,7 @@ export default class App extends React.Component {
       sidebarCollapsed: false,
       sidebarResizing: null,
       zoom: props.zoom ?? 4,
+      trackWidth: TRACKW_DEFAULT,
     };
     this.onBoardDblClick = this.onBoardDblClick.bind(this);
     this.onBoardMouseDown = this.onBoardMouseDown.bind(this);
@@ -61,8 +69,16 @@ export default class App extends React.Component {
     });
   }
 
-  get zoom() {
-    return this.state.zoom;
+  // Time density (px per minute) for the current orientation. Vertical mode
+  // keeps a fixed compact scale; horizontal mode uses the adjustable zoom.
+  timeDensity() {
+    return this.state.orientation === 'vertical' ? VERTICAL_PX : this.state.zoom;
+  }
+
+  // Cross-axis size of a track (row height in horizontal, column width in
+  // vertical). Vertical mode uses the adjustable trackWidth.
+  laneCross() {
+    return this.state.orientation === 'vertical' ? this.state.trackWidth : LAYOUT.laneSize;
   }
 
   componentDidMount() {
@@ -84,6 +100,7 @@ export default class App extends React.Component {
         sidebarWidth: v.sidebarWidth || 150,
         sidebarCollapsed: !!v.sidebarCollapsed,
         zoom: v.zoom ?? this.state.zoom,
+        trackWidth: v.trackWidth ?? this.state.trackWidth,
       });
     }
     this.timer = setInterval(() => this.setState({ nowMin: currentMin() }), 15000);
@@ -117,6 +134,7 @@ export default class App extends React.Component {
       sidebarWidth: next.sidebarWidth ?? this.state.sidebarWidth,
       sidebarCollapsed: next.sidebarCollapsed ?? this.state.sidebarCollapsed,
       zoom: next.zoom ?? this.state.zoom,
+      trackWidth: next.trackWidth ?? this.state.trackWidth,
     };
     saveView(v);
   }
@@ -125,6 +143,12 @@ export default class App extends React.Component {
     const zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
     this.setState({ zoom });
     this.persistView({ zoom });
+  }
+
+  setTrackWidth(w) {
+    const trackWidth = Math.max(TRACKW_MIN, Math.min(TRACKW_MAX, w));
+    this.setState({ trackWidth });
+    this.persistView({ trackWidth });
   }
 
   trackFor(lane) {
@@ -199,7 +223,7 @@ export default class App extends React.Component {
     if (!d) return;
     const V = this.state.orientation === 'vertical';
     const delta = V ? e.clientX - d.startX : e.clientY - d.startY;
-    const laneSize = LAYOUT.laneSize;
+    const laneSize = this.laneCross();
     const overIndex = Math.max(
       0,
       Math.min(this.state.tracks.length - 1, d.index + Math.round(delta / laneSize)),
@@ -269,30 +293,35 @@ export default class App extends React.Component {
     this.persist(tasks);
   }
 
+  // Instant create: a double-click on empty space drops a new 30-minute task
+  // at that position/track immediately (no dialog), ready to drag/resize.
   onBoardDblClick(e) {
     if (e.target.closest('[data-dot]') || e.target.closest('[data-task]')) return;
     const el = this.contentRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const px = this.state.zoom;
-    const laneSize = LAYOUT.laneSize;
+    const px = this.timeDensity();
+    const laneSize = this.laneCross();
     const V = this.state.orientation === 'vertical';
     const timeRaw = V ? e.clientY - rect.top : e.clientX - rect.left;
     const laneRaw = V ? e.clientX - rect.left : e.clientY - rect.top;
     let min = Math.round(timeRaw / px / 15) * 15;
     min = Math.max(0, Math.min(2865, min));
     const lane = Math.max(0, Math.min(this.state.tracks.length - 1, Math.floor(laneRaw / laneSize)));
-    this.setState({
-      popupOpen: true,
-      mode: 'add',
-      draft: { id: null, title: '', start: min, duration: 60, lane, parentIds: [] },
-      dependQuery: '',
-      dependOpen: false,
-    });
+    const task = {
+      id: 'id' + Date.now() + Math.floor(Math.random() * 9999),
+      title: 'New task',
+      lane,
+      start: min,
+      duration: 30,
+      done: false,
+      parentIds: [],
+    };
+    this.persist([...this.state.tasks, task]);
   }
 
   jumpToNow(smooth) {
-    const px = this.state.zoom;
+    const px = this.timeDensity();
     const V = this.state.orientation === 'vertical';
     if (V) {
       const b = this.boardRef.current;
@@ -353,8 +382,8 @@ export default class App extends React.Component {
     const el = this.contentRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
-    const px = this.state.zoom;
-    const laneSize = LAYOUT.laneSize;
+    const px = this.timeDensity();
+    const laneSize = this.laneCross();
     const V = this.state.orientation === 'vertical';
     const timeRaw = V ? clientY - rect.top : clientX - rect.left;
     const laneRaw = V ? clientX - rect.left : clientY - rect.top;
@@ -438,8 +467,8 @@ export default class App extends React.Component {
       this.setState({ marquee: null, selection: [] });
       return;
     }
-    const px = this.state.zoom;
-    const laneSize = LAYOUT.laneSize;
+    const px = this.timeDensity();
+    const laneSize = this.laneCross();
     const V = this.state.orientation === 'vertical';
     const l = Math.min(m.cx0, m.cx1);
     const r = Math.max(m.cx0, m.cx1);
@@ -647,10 +676,11 @@ export default class App extends React.Component {
   }
 
   computeVals() {
-    const px = this.state.zoom;
-    const { laneSize, dateBarH, hourBarH, trackHeaderH, totalMin } = LAYOUT;
-    const rulerH = dateBarH + hourBarH;
     const V = this.state.orientation === 'vertical';
+    const px = this.timeDensity();
+    const laneSize = this.laneCross();
+    const { dateBarH, hourBarH, trackHeaderH, totalMin } = LAYOUT;
+    const rulerH = dateBarH + hourBarH;
     const timeAxisSize = totalMin * px;
     const tasks = this.state.tasks;
     const laneCount = this.state.tracks.length;
@@ -732,8 +762,8 @@ export default class App extends React.Component {
           cursor: 'text',
         },
         nameStyleV: {
-          fontSize: '10px',
-          color: 'rgba(231,233,238,.75)',
+          fontSize: '11.5px',
+          color: 'rgba(231,233,238,.85)',
           fontFamily: "'JetBrains Mono',monospace",
           outline: 'none',
           whiteSpace: 'nowrap',
@@ -741,6 +771,9 @@ export default class App extends React.Component {
           textOverflow: 'ellipsis',
           cursor: 'text',
           maxWidth: '100%',
+          width: '100%',
+          padding: '0 4px',
+          boxSizing: 'border-box',
           textAlign: 'center',
         },
         onCycleColor: () => this.cycleTrackColor(i),
@@ -1293,11 +1326,13 @@ export default class App extends React.Component {
       showNow,
       nowStyle,
       nowRulerStyle,
-      zoom: this.state.zoom,
-      zoomMin: ZOOM_MIN,
-      zoomMax: ZOOM_MAX,
-      zoomStep: ZOOM_STEP,
-      setZoom: (z) => this.setZoom(z),
+      zoomBarValue: V ? this.state.trackWidth : this.state.zoom,
+      zoomBarMin: V ? TRACKW_MIN : ZOOM_MIN,
+      zoomBarMax: V ? TRACKW_MAX : ZOOM_MAX,
+      zoomBarStep: V ? TRACKW_STEP : ZOOM_STEP,
+      zoomBarLabel: V ? 'Track width' : 'Density',
+      zoomBarUnit: V ? 'px' : 'px/min',
+      onZoomBarChange: V ? (w) => this.setTrackWidth(w) : (z) => this.setZoom(z),
       popupOpen: this.state.popupOpen,
       draft: d,
       isEdit: this.state.mode === 'edit',
@@ -1356,17 +1391,18 @@ export default class App extends React.Component {
       <div style={rootStyle}>
         <Header {...vals} />
         <ZoomBar
-          zoom={vals.zoom}
-          min={vals.zoomMin}
-          max={vals.zoomMax}
-          step={vals.zoomStep}
-          onZoomChange={vals.setZoom}
+          value={vals.zoomBarValue}
+          min={vals.zoomBarMin}
+          max={vals.zoomBarMax}
+          step={vals.zoomBarStep}
+          label={vals.zoomBarLabel}
+          unit={vals.zoomBarUnit}
+          onChange={vals.onZoomBarChange}
         />
         <div ref={vals.boardRef} style={boardWrapStyle}>
           <Sidebar {...vals} />
           <Timeline {...vals} />
         </div>
-        {vals.popupOpen && <TaskModal {...vals} />}
       </div>
     );
   }
