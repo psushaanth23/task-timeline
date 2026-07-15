@@ -186,9 +186,6 @@ export default function Timeline(props) {
                 onMouseDown={lane.onRowMouseDown}
                 title="Drag to reorder · double-click name to rename"
               >
-                <div title="Drag to reorder" style={lane.dragHandleStyle}>
-                  ⠿
-                </div>
                 <div
                   data-no-drag="true"
                   onClick={lane.onCycleColor}

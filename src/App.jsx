@@ -1018,13 +1018,6 @@ export default class App extends React.Component {
               ? 'inset 2px 0 0 #14b8a6, inset -2px 0 0 #14b8a6'
               : 'none',
         },
-        dragHandleStyle: {
-          cursor: isDraggingRow ? 'grabbing' : 'grab',
-          color: 'rgba(231,233,238,.32)',
-          fontSize: '12px',
-          flex: 'none',
-          userSelect: 'none',
-        },
         dotStyle: {
           width: 11,
           height: 11,
