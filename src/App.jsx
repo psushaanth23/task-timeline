@@ -5,6 +5,7 @@ import Timeline from './components/Timeline.jsx';
 import { PALETTE, LAYOUT, genTrackId, genTagId, makeTracks, seedTasks } from './lib/constants.js';
 import TagPicker from './components/TagPicker.jsx';
 import ArchivePage from './components/ArchivePage.jsx';
+import TagManagerPage from './components/TagManagerPage.jsx';
 import { fmt, fmtHour, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
@@ -68,7 +69,7 @@ export default class App extends React.Component {
       // tagIds and a deletedAt stamp) instead of being destroyed, and are
       // viewable/restorable from the #/archive page.
       deletedTracks: [],
-      route: typeof window !== 'undefined' && window.location.hash === '#/archive' ? 'archive' : 'timeline',
+      route: App.routeFromHash(),
       wiring: null,
       orientation: 'horizontal',
       sidebarWidth: 150,
@@ -591,15 +592,39 @@ export default class App extends React.Component {
     this.persist(null, null, tags);
   }
 
-  // Hash-based route: '#/archive' shows the Deleted Tracks page; anything else
-  // shows the timeline. Kept dependency-free (no react-router).
+  // Delete a tag globally: drop it from the tag collection and unassign it from
+  // every active track's tagIds.
+  deleteTag(tagId) {
+    const tags = this.state.tags.filter((t) => t.id !== tagId);
+    const tracks = this.state.tracks.map((tr) => {
+      const ids = tr.tagIds || [];
+      return ids.includes(tagId) ? { ...tr, tagIds: ids.filter((x) => x !== tagId) } : tr;
+    });
+    this.persist(null, tracks, tags);
+  }
+
+  // Hash-based routing (dependency-free, no react-router): '#/archive' -> the
+  // Deleted Tracks page, '#/tags' -> the Tag Manager, anything else -> timeline.
+  static routeFromHash() {
+    if (typeof window === 'undefined') return 'timeline';
+    const h = window.location.hash;
+    if (h === '#/archive') return 'archive';
+    if (h === '#/tags') return 'tags';
+    return 'timeline';
+  }
+
   onHashChange() {
-    this.setState({ route: window.location.hash === '#/archive' ? 'archive' : 'timeline' });
+    this.setState({ route: App.routeFromHash() });
   }
 
   goArchive() {
     window.location.hash = '#/archive';
     this.setState({ route: 'archive' });
+  }
+
+  goTags() {
+    window.location.hash = '#/tags';
+    this.setState({ route: 'tags' });
   }
 
   goTimeline() {
@@ -1921,6 +1946,8 @@ export default class App extends React.Component {
       addTrack: () => this.addTrack(),
       onOpenArchive: () => this.goArchive(),
       archiveCount: this.state.deletedTracks.length,
+      onOpenTags: () => this.goTags(),
+      tagCount: this.state.tags.length,
       editingId: this.state.editingId,
       editingTitle: editingTask ? editingTask.title : '',
       onCommitTitle: (id, text) => this.commitInlineEdit(id, text),
@@ -1936,6 +1963,19 @@ export default class App extends React.Component {
           tags={this.state.tags}
           onRestore={(id) => this.restoreTrack(id)}
           onPurge={(id) => this.purgeDeletedTrack(id)}
+          onBack={() => this.goTimeline()}
+        />
+      );
+    }
+    if (this.state.route === 'tags') {
+      return (
+        <TagManagerPage
+          tags={this.state.tags}
+          tracks={this.state.tracks}
+          palette={PALETTE}
+          onRename={(id, label) => this.setTagLabel(id, label)}
+          onSetColor={(id, color) => this.setTagColor(id, color)}
+          onDelete={(id) => this.deleteTag(id)}
           onBack={() => this.goTimeline()}
         />
       );

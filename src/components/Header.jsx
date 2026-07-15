@@ -64,6 +64,8 @@ export default function Header(props) {
     onZoomBarChange,
     onOpenArchive,
     archiveCount = 0,
+    onOpenTags,
+    tagCount = 0,
   } = props;
 
   // Segmented orientation toggle. `toggleOrientation` simply flips the current
@@ -192,6 +194,32 @@ export default function Header(props) {
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
           </svg>
           Archive{archiveCount > 0 ? ' (' + archiveCount + ')' : ''}
+        </HoverButton>
+        <HoverButton
+          onClick={onOpenTags}
+          title="Manage tags"
+          aria-label="Manage tags"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '7px',
+            background: 'rgba(255,255,255,.05)',
+            border: '1px solid rgba(255,255,255,.12)',
+            color: 'rgba(231,233,238,.7)',
+            padding: '8px 13px',
+            borderRadius: '9px',
+            fontSize: '13px',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontFamily: "'JetBrains Mono',monospace",
+          }}
+          hoverStyle={{ background: 'rgba(255,255,255,.1)', color: '#e7e9ee' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+            <line x1="7" y1="7" x2="7.01" y2="7" />
+          </svg>
+          Tags{tagCount > 0 ? ' (' + tagCount + ')' : ''}
         </HoverButton>
         <HoverButton
           onClick={jumpToNow}
