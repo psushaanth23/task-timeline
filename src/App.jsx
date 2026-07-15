@@ -3,7 +3,7 @@ import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Timeline from './components/Timeline.jsx';
 import { PALETTE, LAYOUT, genTrackId, makeTracks, seedTasks } from './lib/constants.js';
-import { currentMin, fmt, fmtHour, durLabel } from './lib/time.js';
+import { fmt, fmtHour, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
 import { loadData, saveData, loadView, saveView } from './lib/storage.js';
@@ -29,10 +29,16 @@ export default class App extends React.Component {
     this.scrollRef = React.createRef();
     this.boardRef = React.createRef();
     this.palette = PALETTE;
+    // The timeline's pixel-0 is a fixed, absolute moment (local midnight of the
+    // anchor day). Task `start` is a minute offset from this origin, so a task
+    // maps to a real date+time and never shifts when the wall clock crosses
+    // midnight. Persisted/migrated in componentDidMount / hydrateFromDisk.
+    const originMs = localMidnightMs();
     this.state = {
       tasks: seedTasks(),
       tracks: makeTracks(),
-      nowMin: currentMin(),
+      originMs,
+      nowMin: minutesSince(originMs),
       editingId: null,
       drag: null,
       groupDrag: null,
@@ -87,17 +93,47 @@ export default class App extends React.Component {
     return this.state.orientation === 'vertical' ? this.state.trackWidth : LAYOUT.laneSize;
   }
 
+  // Choose the timeline origin for a saved blob. New-format state carries an
+  // absolute `origin` (epoch ms). Legacy state (minutes-of-day, no origin) is
+  // migrated by anchoring to today's local midnight — since the old code always
+  // rendered relative to today, this reproduces the exact same layout with no
+  // jump, while making every task an absolute moment going forward.
+  resolveOrigin(saved) {
+    return saved && typeof saved.origin === 'number' ? saved.origin : localMidnightMs();
+  }
+
+  // Persist form: each task carries an absolute `startMs` so the file is
+  // origin-independent and round-trips a real date+time.
+  serializeTasks(tasks, originMs) {
+    return tasks.map((t) => ({ ...t, startMs: originMs + Math.round(t.start) * MS_PER_MIN }));
+  }
+
+  // Rebuild in-memory tasks (minute offset from origin) from persisted tasks,
+  // deriving `start` from the absolute `startMs` when present (new format) and
+  // falling back to the raw `start` for legacy data. Also normalizes done/deps.
+  hydrateTasks(rawTasks, originMs) {
+    return rawTasks.map((t) => {
+      const parentIds = Array.isArray(t.parentIds) ? t.parentIds : t.parentId ? [t.parentId] : [];
+      const start = typeof t.startMs === 'number' ? Math.round((t.startMs - originMs) / MS_PER_MIN) : t.start;
+      const out = { ...t, start, done: !!t.done, parentIds };
+      delete out.startMs;
+      return out;
+    });
+  }
+
+  // Write the local (localStorage) cache in the absolute persist form.
+  saveLocal(tasks, tracks) {
+    saveData(this.serializeTasks(tasks, this.state.originMs), tracks, this.state.originMs);
+  }
+
   componentDidMount() {
     const s = loadData();
     if (s) {
+      const originMs = this.resolveOrigin(s);
       let tr = s.tracks && s.tracks.length ? s.tracks : this.state.tracks;
       tr = tr.map((t) => (t.id ? t : { ...t, id: genTrackId() }));
-      const tasks = s.tasks.map((t) => ({
-        ...t,
-        done: !!t.done,
-        parentIds: Array.isArray(t.parentIds) ? t.parentIds : t.parentId ? [t.parentId] : [],
-      }));
-      this.setState({ tasks, tracks: tr });
+      const tasks = this.hydrateTasks(s.tasks, originMs);
+      this.setState({ tasks, tracks: tr, originMs, nowMin: minutesSince(originMs) });
     }
     const v = loadView();
     if (v) {
@@ -109,7 +145,7 @@ export default class App extends React.Component {
         trackWidth: v.trackWidth ?? this.state.trackWidth,
       });
     }
-    this.timer = setInterval(() => this.setState({ nowMin: currentMin() }), 15000);
+    this.timer = setInterval(() => this.setState({ nowMin: minutesSince(this.state.originMs) }), 15000);
     document.addEventListener('keydown', this.onDocKeyDown);
     // Best-effort flush of any pending debounced disk write on page unload.
     this._onBeforeUnload = () => this.flushDiskSave();
@@ -133,7 +169,12 @@ export default class App extends React.Component {
   }
 
   diskPayload() {
-    return { tasks: this.state.tasks, tracks: this.state.tracks, view: this.currentView() };
+    return {
+      tasks: this.serializeTasks(this.state.tasks, this.state.originMs),
+      tracks: this.state.tracks,
+      origin: this.state.originMs,
+      view: this.currentView(),
+    };
   }
 
   // Debounced, fire-and-forget disk write. No-ops until hydration completes so
@@ -161,18 +202,17 @@ export default class App extends React.Component {
     const disk = await loadState();
     if (disk && Array.isArray(disk.tasks) && !this._dirtyBeforeHydration) {
       // Disk wins: apply its tasks/tracks/view and mirror into the LS cache.
+      const originMs = this.resolveOrigin(disk);
       let tr = disk.tracks && disk.tracks.length ? disk.tracks : this.state.tracks;
       tr = tr.map((t) => (t.id ? t : { ...t, id: genTrackId() }));
-      const tasks = disk.tasks.map((t) => ({
-        ...t,
-        done: !!t.done,
-        parentIds: Array.isArray(t.parentIds) ? t.parentIds : t.parentId ? [t.parentId] : [],
-      }));
+      const tasks = this.hydrateTasks(disk.tasks, originMs);
       const view = disk.view || {};
       this.setState(
         {
           tasks,
           tracks: tr,
+          originMs,
+          nowMin: minutesSince(originMs),
           orientation: view.orientation || this.state.orientation,
           sidebarWidth: view.sidebarWidth || this.state.sidebarWidth,
           sidebarCollapsed:
@@ -181,7 +221,7 @@ export default class App extends React.Component {
           trackWidth: view.trackWidth ?? this.state.trackWidth,
         },
         () => {
-          saveData(this.state.tasks, this.state.tracks);
+          this.saveLocal(this.state.tasks, this.state.tracks);
           saveView(this.currentView());
           this._hydrated = true;
           this.jumpToNow(false);
@@ -218,7 +258,7 @@ export default class App extends React.Component {
     this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks });
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
-    saveData(t, tr);
+    this.saveLocal(t, tr);
     this.setState({ tasks: t, tracks: tr });
     this.syncDisk();
   }
@@ -227,7 +267,7 @@ export default class App extends React.Component {
     if (!this.undoStack.length) return;
     const prev = this.undoStack.pop();
     this.redoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks });
-    saveData(prev.tasks, prev.tracks);
+    this.saveLocal(prev.tasks, prev.tracks);
     const liveIds = new Set(prev.tasks.map((t) => t.id));
     this.setState({
       tasks: prev.tasks,
@@ -241,7 +281,7 @@ export default class App extends React.Component {
     if (!this.redoStack.length) return;
     const next = this.redoStack.pop();
     this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks });
-    saveData(next.tasks, next.tracks);
+    this.saveLocal(next.tasks, next.tracks);
     const liveIds = new Set(next.tasks.map((t) => t.id));
     this.setState({
       tasks: next.tasks,
@@ -522,7 +562,7 @@ export default class App extends React.Component {
       // timeline's own scroll div or the outer board wrapper, so scroll
       // whichever one actually overflows.
       const barSize = LAYOUT.trackHeaderH;
-      const nowPos = barSize + currentMin() * px;
+      const nowPos = barSize + minutesSince(this.state.originMs) * px;
       const candidates = [this.scrollRef.current, this.boardRef.current];
       candidates.forEach((el) => {
         if (!el) return;
@@ -534,7 +574,7 @@ export default class App extends React.Component {
     } else {
       const sc = this.scrollRef.current;
       if (!sc) return;
-      const target = Math.max(0, currentMin() * px - sc.clientWidth * 0.4);
+      const target = Math.max(0, minutesSince(this.state.originMs) * px - sc.clientWidth * 0.4);
       if (smooth === false) sc.scrollLeft = target;
       else sc.scrollTo({ left: target, behavior: 'smooth' });
     }
@@ -1064,7 +1104,7 @@ export default class App extends React.Component {
         flex: 'none',
       },
     }));
-    const baseDate = new Date();
+    const baseDate = new Date(this.state.originMs);
     const dayBands = [0, 1].map((dOff) => {
       const dt = new Date(baseDate);
       dt.setDate(dt.getDate() + dOff);
@@ -1379,7 +1419,7 @@ export default class App extends React.Component {
           }
         : null;
 
-    const showNow = nowMin >= 0 && nowMin <= 1440;
+    const showNow = nowMin >= 0 && nowMin <= totalMin;
     let nowStyle, nowRulerStyle;
     if (V) {
       const nowTop = nowMin * px + 'px';

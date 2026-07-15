@@ -1,8 +1,26 @@
 export const pad = (n) => String(n).padStart(2, '0');
 
+export const MS_PER_MIN = 60000;
+
 export function currentMin() {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+}
+
+// Epoch ms of the most recent local midnight (00:00) for the given date.
+// This is the timeline's stable pixel-0 origin, so a task's minute offset maps
+// to a real, fixed moment instead of a floating "minutes since today".
+export function localMidnightMs(d = new Date()) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x.getTime();
+}
+
+// Minutes elapsed from a fixed origin to now. Unlike currentMin() this keeps
+// counting past 1440 across midnight (1439 -> 1440 -> 1441 ...) so nothing
+// anchored to the same origin shifts when the wall clock rolls over.
+export function minutesSince(originMs) {
+  return (Date.now() - originMs) / MS_PER_MIN;
 }
 
 export function minToInput(m) {
