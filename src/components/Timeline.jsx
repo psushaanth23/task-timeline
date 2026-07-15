@@ -249,7 +249,7 @@ export default function Timeline(props) {
             ))}
           </>
         )}
-        {showNow && <div style={nowRulerStyle}>now</div>}
+        {showNow && notVertical && <div style={nowRulerStyle}>now</div>}
       </div>
 
       <div ref={contentRef} onDoubleClick={onBoardDblClick} onMouseDown={onBoardMouseDown} style={lanesStyle}>
@@ -286,6 +286,10 @@ export default function Timeline(props) {
           ))}
         </svg>
         {showNow && <div style={nowStyle} />}
+        {/* In vertical mode the time axis runs down the content, so the "now"
+            label lives inside the scrolling content (same coords as the line +
+            tasks) rather than in the sticky top track-header ruler. */}
+        {showNow && isVertical && <div style={nowRulerStyle}>now</div>}
         {taskViews.map(t => (
           <div
             key={t.id}
