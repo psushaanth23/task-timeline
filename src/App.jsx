@@ -1122,14 +1122,22 @@ export default class App extends React.Component {
               ? 'inset 2px 0 0 #14b8a6, inset -2px 0 0 #14b8a6'
               : 'none',
         },
-        dotStyle: {
-          width: 11,
-          height: 11,
-          borderRadius: 4,
+        // Colored left-accent bar (Google-Calendar/Todoist style) flush to the
+        // leading edge of the dark track card. Absolutely positioned so it
+        // spans the card height without disturbing the flex layout, inset a
+        // little with rounded outer ends, and softly glows into the card.
+        // Still the click target for cycling the track color.
+        barStyle: {
+          position: 'absolute',
+          left: 0,
+          top: '16%',
+          bottom: '16%',
+          width: '4px',
+          borderRadius: '0 3px 3px 0',
           background: tr.color,
-          flex: 'none',
+          boxShadow: '0 0 10px ' + tr.color + '66, 5px 0 14px -5px ' + tr.color + '55',
           cursor: 'pointer',
-          boxShadow: '0 0 8px ' + tr.color + '99',
+          zIndex: 1,
         },
         nameStyle: {
           fontSize: '12.5px',

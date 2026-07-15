@@ -90,7 +90,7 @@ export default function Sidebar(props) {
                 data-no-drag="true"
                 onClick={lane.onCycleColor}
                 title="Click to change track color"
-                style={lane.dotStyle}
+                style={lane.barStyle}
               />
               <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <TrackName
