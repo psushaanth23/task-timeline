@@ -1982,67 +1982,51 @@ export default class App extends React.Component {
         : null;
 
     const showNow = nowMin >= 0 && nowMin <= totalMin;
+    // Live clock time shown on the now indicator. Derived from nowMin (minutes
+    // since local-midnight origin), so it reflects real wall-clock time, updates
+    // with the nowMin timer, and wraps correctly across midnight. Floor to whole
+    // minutes so fmt never rounds seconds up to ":60".
+    const nowTime = fmt(Math.floor(nowMin), this.props.timeFormat);
     let nowStyle, nowRulerStyle;
+    const nowLine = {
+      position: 'absolute',
+      background: '#ffe14d',
+      zIndex: 4,
+      boxShadow:
+        '0 0 2px #fff, 0 0 10px #ffd60a, 0 0 22px rgba(255,214,10,.85), 0 0 40px rgba(255,214,10,.45)',
+    };
+    // On-theme dark-glass pill that rides the now line and stacks the live time
+    // over a small "NOW" label. pointer-events:none so it never blocks the board;
+    // soft pulsing glow via the nowPulse keyframes (colon blink is on the time
+    // span in Timeline).
+    const nowLabelBase = {
+      position: 'absolute',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '1px',
+      padding: '3px 8px',
+      borderRadius: '7px',
+      background: 'rgba(18,15,0,.62)',
+      backdropFilter: 'blur(6px)',
+      WebkitBackdropFilter: 'blur(6px)',
+      border: '1px solid rgba(255,214,10,.5)',
+      color: '#ffd60a',
+      fontFamily: "'JetBrains Mono',monospace",
+      whiteSpace: 'nowrap',
+      pointerEvents: 'none',
+      zIndex: 6,
+      boxShadow: '0 0 12px rgba(255,214,10,.4), 0 2px 8px rgba(0,0,0,.5)',
+      animation: 'nowPulse 2.4s ease-in-out infinite',
+    };
     if (V) {
       const nowTop = nowMin * px + 'px';
-      nowStyle = {
-        position: 'absolute',
-        left: 0,
-        top: nowTop,
-        height: '1px',
-        width: contentW + 'px',
-        background: '#ffe14d',
-        zIndex: 4,
-        boxShadow:
-          '0 0 2px #fff, 0 0 10px #ffd60a, 0 0 22px rgba(255,214,10,.85), 0 0 40px rgba(255,214,10,.45)',
-      };
-      nowRulerStyle = {
-        position: 'absolute',
-        left: '6px',
-        top: nowTop,
-        transform: 'translateY(-50%)',
-        background: '#ffd60a',
-        color: '#181200',
-        fontSize: '9px',
-        fontWeight: 800,
-        padding: '2px 7px',
-        borderRadius: '6px',
-        fontFamily: "'JetBrains Mono',monospace",
-        letterSpacing: '.05em',
-        textTransform: 'uppercase',
-        zIndex: 6,
-        boxShadow: '0 0 12px rgba(255,214,10,.7)',
-      };
+      nowStyle = { ...nowLine, left: 0, top: nowTop, height: '1px', width: contentW + 'px' };
+      nowRulerStyle = { ...nowLabelBase, left: '6px', top: nowTop, transform: 'translateY(-50%)' };
     } else {
       const nowLeft = nowMin * px + 'px';
-      nowStyle = {
-        position: 'absolute',
-        left: nowLeft,
-        top: 0,
-        width: '1px',
-        height: contentH + 'px',
-        background: '#ffe14d',
-        zIndex: 4,
-        boxShadow:
-          '0 0 2px #fff, 0 0 10px #ffd60a, 0 0 22px rgba(255,214,10,.85), 0 0 40px rgba(255,214,10,.45)',
-      };
-      nowRulerStyle = {
-        position: 'absolute',
-        left: nowLeft,
-        top: dateBarH + 8 + 'px',
-        transform: 'translateX(-50%)',
-        background: '#ffd60a',
-        color: '#181200',
-        fontSize: '9px',
-        fontWeight: 800,
-        padding: '2px 7px',
-        borderRadius: '6px',
-        fontFamily: "'JetBrains Mono',monospace",
-        letterSpacing: '.05em',
-        textTransform: 'uppercase',
-        zIndex: 6,
-        boxShadow: '0 0 12px rgba(255,214,10,.7)',
-      };
+      nowStyle = { ...nowLine, left: nowLeft, top: 0, width: '1px', height: contentH + 'px' };
+      nowRulerStyle = { ...nowLabelBase, left: nowLeft, top: dateBarH + 8 + 'px', transform: 'translateX(-50%)' };
     }
 
     const editingTask = this.state.editingId
@@ -2154,6 +2138,7 @@ export default class App extends React.Component {
       showNow,
       nowStyle,
       nowRulerStyle,
+      nowTime,
       zoomBarValue: V ? this.state.trackWidth : this.state.zoom,
       zoomBarMin: V ? TRACKW_MIN : ZOOM_MIN,
       zoomBarMax: V ? TRACKW_MAX : ZOOM_MAX,

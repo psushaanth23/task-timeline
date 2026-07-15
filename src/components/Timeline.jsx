@@ -19,6 +19,7 @@ export default function Timeline(props) {
     showNow,
     nowRulerStyle,
     nowStyle,
+    nowTime,
     onBoardDblClick,
     onBoardMouseDown,
     lanesStyle,
@@ -180,6 +181,36 @@ export default function Timeline(props) {
     }
   };
 
+  // The now-indicator pill contents: live clock time on top (with a softly
+  // blinking colon) and a small "NOW" underneath. Same markup in both
+  // orientations; the pill's position/glow come from nowRulerStyle.
+  const renderNowLabel = () => {
+    const t = nowTime || '';
+    const idx = t.indexOf(':');
+    const timeContent =
+      idx === -1 ? (
+        t
+      ) : (
+        <>
+          {t.slice(0, idx)}
+          <span className="now-colon">:</span>
+          {t.slice(idx + 1)}
+        </>
+      );
+    return (
+      <>
+        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.02em', lineHeight: 1 }}>
+          {timeContent}
+        </span>
+        <span
+          style={{ fontSize: '7.5px', fontWeight: 800, letterSpacing: '.16em', opacity: 0.75, lineHeight: 1 }}
+        >
+          NOW
+        </span>
+      </>
+    );
+  };
+
   return (
     <div ref={scrollRef} style={scrollWrapStyle || { flex: 1, overflowX: 'auto', overflowY: 'visible' }}>
       <div style={rulerStyle}>
@@ -255,7 +286,7 @@ export default function Timeline(props) {
             ))}
           </>
         )}
-        {showNow && notVertical && <div style={nowRulerStyle}>now</div>}
+        {showNow && notVertical && <div style={nowRulerStyle}>{renderNowLabel()}</div>}
       </div>
 
       <div ref={contentRef} onDoubleClick={onBoardDblClick} onMouseDown={onBoardMouseDown} style={lanesStyle}>
@@ -332,7 +363,7 @@ export default function Timeline(props) {
         {/* In vertical mode the time axis runs down the content, so the "now"
             label lives inside the scrolling content (same coords as the line +
             tasks) rather than in the sticky top track-header ruler. */}
-        {showNow && isVertical && <div style={nowRulerStyle}>now</div>}
+        {showNow && isVertical && <div style={nowRulerStyle}>{renderNowLabel()}</div>}
         {taskViews.map(t => (
           <div
             key={t.id}
