@@ -1,4 +1,6 @@
 export const PALETTE = [
+  // Original palette — DO NOT reorder or change; track/tag colors are stored as
+  // these hex values, so existing selections must stay valid.
   '#ff5c7c',
   '#ff8f5c',
   '#ffd23f',
@@ -9,6 +11,20 @@ export const PALETTE = [
   '#f472b6',
   '#2dd4bf',
   '#c084fc',
+  // Added for more variety — distinct hues/saturations spread around the wheel,
+  // all tuned to read as bright accents on the dark glass theme.
+  '#ef4444', // red
+  '#f97316', // deep orange
+  '#f59e0b', // amber / gold
+  '#a3e635', // lime
+  '#22c55e', // green
+  '#6ee7b7', // mint
+  '#3b82f6', // blue
+  '#6366f1', // indigo
+  '#7c3aed', // deep violet / plum
+  '#d946ef', // fuchsia
+  '#ec4899', // hot pink
+  '#f43f5e', // rose
 ];
 
 export const TRACK_NAMES = [
