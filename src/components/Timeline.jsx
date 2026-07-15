@@ -27,8 +27,10 @@ export default function Timeline(props) {
     svgWidthNum,
     svgHeightNum,
     connectors,
+    onDeleteConnector,
     chainLinks,
     wireLive,
+    pendingLive,
     taskViews,
     marqueeRect,
     editingId,
@@ -41,6 +43,9 @@ export default function Timeline(props) {
   // Escape (cancel) blur from a normal commit blur.
   const editRef = React.useRef(null);
   const cancelRef = React.useRef(false);
+  // Which dependency connector line the pointer is hovering (for click-to-delete
+  // highlight). Cleared on leave.
+  const [hoverConn, setHoverConn] = React.useState(null);
 
   React.useEffect(() => {
     if (!editingId) return;
@@ -263,16 +268,42 @@ export default function Timeline(props) {
           height={svgHeightNum}
           style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 2, overflow: 'visible' }}
         >
-          {connectors.map(c => (
-            <path
-              key={c.id}
-              d={c.d}
-              fill="none"
-              stroke="rgba(255,255,255,.28)"
-              strokeWidth={2}
-              strokeDasharray="5 5"
-            />
-          ))}
+          {connectors.map(c => {
+            const hot = hoverConn === c.id;
+            return (
+              <g key={c.id}>
+                {/* Visible line: turns red + thickens on hover to signal it's
+                    clickable for deletion. Non-interactive itself. */}
+                <path
+                  d={c.d}
+                  fill="none"
+                  stroke={hot ? '#ff5c7c' : 'rgba(255,255,255,.28)'}
+                  strokeWidth={hot ? 3.5 : 2}
+                  strokeDasharray="5 5"
+                  style={{ pointerEvents: 'none' }}
+                />
+                {/* Invisible fat hit area over the same geometry so the thin line
+                    is easy to hover/click. pointer-events:stroke makes only the
+                    (transparent) stroke band interactive, and it overrides the
+                    parent svg's pointer-events:none. */}
+                <path
+                  d={c.d}
+                  fill="none"
+                  stroke="transparent"
+                  strokeWidth={16}
+                  style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                  onMouseEnter={() => setHoverConn(c.id)}
+                  onMouseLeave={() => setHoverConn((h) => (h === c.id ? null : h))}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHoverConn(null);
+                    onDeleteConnector && onDeleteConnector(c.childId, c.parentId);
+                  }}
+                />
+              </g>
+            );
+          })}
           {wireLive && (
             <path
               d={wireLive.d}
@@ -280,6 +311,17 @@ export default function Timeline(props) {
               stroke="#5eead4"
               strokeWidth={2.5}
               strokeDasharray="6 5"
+              style={{ pointerEvents: 'none' }}
+            />
+          )}
+          {pendingLive && (
+            <path
+              d={pendingLive.d}
+              fill="none"
+              stroke="#ffd60a"
+              strokeWidth={2.5}
+              strokeDasharray="6 5"
+              style={{ pointerEvents: 'none' }}
             />
           )}
           {chainLinks.map((c) => (

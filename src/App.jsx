@@ -35,6 +35,9 @@ const MAX_START = LAYOUT.totalMin - SNAP_MIN;
 // Below this on-screen card length (px, horizontal mode) the in-card title is
 // too cramped to read, so we hide it and render the name just outside the card.
 const NARROW_CARD_PX = 90;
+// Pointer travel (px) past which a dot press counts as a drag-to-connect rather
+// than a clean click that arms/completes the two-click connect.
+const WIRE_DRAG_THRESHOLD = 4;
 
 export default class App extends React.Component {
   constructor(props) {
@@ -71,6 +74,7 @@ export default class App extends React.Component {
       deletedTracks: [],
       route: App.routeFromHash(),
       wiring: null,
+      pendingConnect: null,
       orientation: 'horizontal',
       sidebarWidth: 150,
       sidebarCollapsed: false,
@@ -86,6 +90,7 @@ export default class App extends React.Component {
     this.onTrackDragUp = this.onTrackDragUp.bind(this);
     this.onWireMove = this.onWireMove.bind(this);
     this.onWireUp = this.onWireUp.bind(this);
+    this.onPendingMove = this.onPendingMove.bind(this);
     this.onSidebarResizeMove = this.onSidebarResizeMove.bind(this);
     this.onSidebarResizeUp = this.onSidebarResizeUp.bind(this);
     this.scroller = new EdgeAutoScroller({
@@ -480,6 +485,14 @@ export default class App extends React.Component {
       if (this.pasteClipboard()) e.preventDefault();
       return;
     }
+    if (e.key === 'Escape') {
+      // Escape cancels a pending two-click connection.
+      if (this.state.pendingConnect) {
+        this.cancelPendingConnect();
+        e.preventDefault();
+      }
+      return;
+    }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (this.state.selection.length) {
         e.preventDefault();
@@ -814,7 +827,19 @@ export default class App extends React.Component {
     const el = this.contentRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    this.setState({ wiring: { sourceId: taskId, side, x: e.clientX - rect.left, y: e.clientY - rect.top } });
+    // Track the press origin so mouseup can tell a clean click (two-click
+    // connect) from a press-drag (the original drag-to-connect).
+    this.setState({
+      wiring: {
+        sourceId: taskId,
+        side,
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        moved: false,
+      },
+    });
     document.addEventListener('mousemove', this.onWireMove);
     document.addEventListener('mouseup', this.onWireUp);
   }
@@ -825,7 +850,11 @@ export default class App extends React.Component {
     const el = this.contentRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    this.setState({ wiring: { ...w, x: e.clientX - rect.left, y: e.clientY - rect.top } });
+    const moved =
+      w.moved ||
+      Math.abs(e.clientX - w.startClientX) > WIRE_DRAG_THRESHOLD ||
+      Math.abs(e.clientY - w.startClientY) > WIRE_DRAG_THRESHOLD;
+    this.setState({ wiring: { ...w, x: e.clientX - rect.left, y: e.clientY - rect.top, moved } });
   }
 
   onWireUp(e) {
@@ -834,17 +863,80 @@ export default class App extends React.Component {
     const w = this.state.wiring;
     this.setState({ wiring: null });
     if (!w) return;
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const dotEl = el && el.closest('[data-dot]');
-    if (!dotEl) return;
-    const targetId = dotEl.getAttribute('data-task-id');
-    if (!targetId || targetId === w.sourceId) return;
+    if (w.moved) {
+      // Original drag-to-connect: whatever dot we release over becomes the
+      // dependent (child) of the dot we dragged from. A drag supersedes any
+      // half-armed two-click connection.
+      this.cancelPendingConnect();
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const dotEl = el && el.closest('[data-dot]');
+      if (dotEl) this.connectDep(w.sourceId, dotEl.getAttribute('data-task-id'));
+      return;
+    }
+    // Clean click (no meaningful movement) => two-click connect gesture.
+    const armed = this.state.pendingConnect;
+    if (!armed) {
+      this.armConnect(w.sourceId, w.side, e);
+    } else if (armed.sourceId === w.sourceId) {
+      // Clicking the same task's dot again cancels the pending connection.
+      this.cancelPendingConnect();
+    } else {
+      this.connectDep(armed.sourceId, w.sourceId);
+      this.cancelPendingConnect();
+    }
+  }
+
+  // Arm a two-click connection from the just-clicked dot; a faint line then
+  // follows the cursor until the second dot (or a cancel) is clicked.
+  armConnect(sourceId, side, e) {
+    const el = this.contentRef.current;
+    const rect = el ? el.getBoundingClientRect() : null;
+    this.setState({
+      pendingConnect: {
+        sourceId,
+        side,
+        x: rect ? e.clientX - rect.left : 0,
+        y: rect ? e.clientY - rect.top : 0,
+      },
+    });
+    document.addEventListener('mousemove', this.onPendingMove);
+  }
+
+  onPendingMove(e) {
+    const p = this.state.pendingConnect;
+    if (!p) return;
+    const el = this.contentRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    this.setState({ pendingConnect: { ...p, x: e.clientX - rect.left, y: e.clientY - rect.top } });
+  }
+
+  cancelPendingConnect() {
+    document.removeEventListener('mousemove', this.onPendingMove);
+    if (this.state.pendingConnect) this.setState({ pendingConnect: null });
+  }
+
+  // Create a dependency: `targetId` (child) gains `sourceId` (parent). Shared by
+  // both the drag and two-click connect flows; persisted + undoable.
+  connectDep(sourceId, targetId) {
+    if (!targetId || targetId === sourceId) return;
     const tasks = this.state.tasks.map((t) => {
       if (t.id !== targetId) return t;
       const pids = Array.isArray(t.parentIds) ? t.parentIds.slice() : [];
-      if (!pids.includes(w.sourceId)) pids.push(w.sourceId);
+      if (!pids.includes(sourceId)) pids.push(sourceId);
       return { ...t, parentIds: pids };
     });
+    this.persist(tasks);
+  }
+
+  // Remove a single dependency edge (child no longer depends on parent). Used by
+  // click-to-delete on a connector line; persisted + undoable.
+  deleteDependency(childId, parentId) {
+    const tasks = this.state.tasks.map((t) =>
+      t.id === childId
+        ? { ...t, parentIds: (t.parentIds || []).filter((pid) => pid !== parentId) }
+        : t,
+    );
     this.persist(tasks);
   }
 
@@ -1012,6 +1104,13 @@ export default class App extends React.Component {
     // gesture); the board has no click handler so nothing else fires.
     if (this.state.editingId) {
       this.maybeExitInlineEdit();
+      e.preventDefault();
+      return;
+    }
+    // Clicking empty space cancels a pending two-click connection (no marquee
+    // this gesture).
+    if (this.state.pendingConnect) {
+      this.cancelPendingConnect();
       e.preventDefault();
       return;
     }
@@ -1527,6 +1626,7 @@ export default class App extends React.Component {
     const byId = {};
     tasks.forEach((t) => (byId[t.id] = t));
     const wiring = this.state.wiring;
+    const pending = this.state.pendingConnect;
 
     // During a group-move, anchor the live time HUD to the leftmost (earliest)
     // selected task so a single, stable pill pair tracks the whole selection.
@@ -1611,12 +1711,19 @@ export default class App extends React.Component {
         zIndex: 5,
         boxShadow: '0 0 6px ' + c,
       };
-      const dotStartStyle = V
+      let dotStartStyle = V
         ? { ...dotBase, left: '50%', top: '-5px', transform: 'translateX(-50%)' }
         : { ...dotBase, left: '-5px', top: '50%', transform: 'translateY(-50%)' };
-      const dotEndStyle = V
+      let dotEndStyle = V
         ? { ...dotBase, left: '50%', bottom: '-5px', transform: 'translateX(-50%)' }
         : { ...dotBase, right: '-5px', top: '50%', transform: 'translateY(-50%)' };
+      // Two-click connect: highlight the armed dot (bright amber ring) so the
+      // user can see a connection is pending and where it originates.
+      if (pending && pending.sourceId === t.id) {
+        const armGlow = { background: '#ffd60a', boxShadow: '0 0 0 3px rgba(255,214,10,.5), 0 0 12px #ffd60a' };
+        if (pending.side === 'start') dotStartStyle = { ...dotStartStyle, ...armGlow };
+        else dotEndStyle = { ...dotEndStyle, ...armGlow };
+      }
       const resizeHandleStyle = V
         ? { position: 'absolute', left: 0, right: 0, bottom: '-3px', height: '10px', cursor: 'ns-resize', zIndex: 4 }
         : { position: 'absolute', top: 0, bottom: 0, right: '-3px', width: '10px', cursor: 'ew-resize', zIndex: 4 };
@@ -1777,7 +1884,7 @@ export default class App extends React.Component {
             x2 = t.start * px;
             y2 = t.lane * laneSize + laneSize / 2;
           }
-          connectors.push({ id: t.id + '-' + pid, d: bezier(x1, y1, x2, y2, V) });
+          connectors.push({ id: t.id + '-' + pid, d: bezier(x1, y1, x2, y2, V), childId: t.id, parentId: pid });
         });
       });
     }
@@ -1794,6 +1901,22 @@ export default class App extends React.Component {
         x1 = wiring.side === 'end' ? (src.start + src.duration) * px : src.start * px;
       }
       wireLive = { d: bezier(x1, y1, wiring.x, wiring.y, V) };
+    }
+
+    // Pending two-click connection: a faint line from the armed dot to the
+    // cursor, mirroring the drag-to-connect live wire.
+    let pendingLive = null;
+    if (pending && byId[pending.sourceId]) {
+      const src = byId[pending.sourceId];
+      let x1, y1;
+      if (V) {
+        x1 = src.lane * laneSize + laneSize / 2;
+        y1 = pending.side === 'end' ? (src.start + src.duration) * px : src.start * px;
+      } else {
+        y1 = src.lane * laneSize + laneSize / 2;
+        x1 = pending.side === 'end' ? (src.start + src.duration) * px : src.start * px;
+      }
+      pendingLive = { d: bezier(x1, y1, pending.x, pending.y, V) };
     }
 
     const halfHour = 30 * px;
@@ -1985,8 +2108,10 @@ export default class App extends React.Component {
       dayBandsV,
       taskViews,
       connectors,
+      onDeleteConnector: (childId, parentId) => this.deleteDependency(childId, parentId),
       chainLinks,
       wireLive,
+      pendingLive,
       lanesStyle,
       gridOverlayStyle,
       marqueeRect,
