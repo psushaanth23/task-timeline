@@ -1132,7 +1132,7 @@ export default class App extends React.Component {
           left: 0,
           top: '16%',
           bottom: '16%',
-          width: '4px',
+          width: '2px',
           borderRadius: '0 3px 3px 0',
           background: tr.color,
           boxShadow: '0 0 10px ' + tr.color + '66, 5px 0 14px -5px ' + tr.color + '55',
