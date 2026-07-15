@@ -506,6 +506,10 @@ export default class App extends React.Component {
       parentIds: [],
     };
     this.persist([...this.state.tasks, task]);
+    // Immediately enter inline rename on the fresh task; Timeline's effect
+    // focuses + selects-all the contenteditable on the next frame once its
+    // DOM node exists (same machinery as double-click-to-rename).
+    this.setState({ editingId: task.id, selection: [] });
   }
 
   jumpToNow(smooth) {
