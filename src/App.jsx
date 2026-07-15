@@ -1130,8 +1130,8 @@ export default class App extends React.Component {
         barStyle: {
           position: 'absolute',
           left: 0,
-          top: '16%',
-          bottom: '16%',
+          top: '6%',
+          bottom: '6%',
           width: '2px',
           borderRadius: '0 3px 3px 0',
           background: tr.color,
