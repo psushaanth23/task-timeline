@@ -1018,27 +1018,24 @@ export default class App extends React.Component {
       const end = start + duration;
       let alpha;
       let urgent = false;
-      // Aero-glass: a translucent white top sheen over the track-hue tint, plus
-      // an inset highlight edge for the frosted-glass look.
-      const sheen =
-        'linear-gradient(180deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.045) 20%, rgba(255,255,255,0) 44%)';
-      const glow = 'inset 0 1px 0 rgba(255,255,255,.22), 0 6px 18px rgba(0,0,0,.4)';
-      // Whole opacity spectrum shifted down so every card is more see-through.
+      // Modern glassmorphism: no glossy sheen. Just a soft hairline top light
+      // and a gentle ambient shadow for a clean, crisp, contemporary card.
+      const glow = 'inset 0 1px 0 rgba(255,255,255,.12), 0 4px 16px rgba(0,0,0,.28)';
+      // Translucent but polished — a modest spectrum that stays see-through.
       if (nowMin < start) {
-        alpha = 0.06;
+        alpha = 0.1;
       } else if (nowMin >= end) {
-        alpha = 0.16;
+        alpha = 0.18;
       } else {
         const prog = Math.max(0, Math.min(1, (nowMin - start) / duration));
-        alpha = 0.06 + prog * 0.28;
+        alpha = 0.1 + prog * 0.3;
         if (end - nowMin <= Math.min(15, duration * 0.25)) {
           urgent = true;
         }
       }
-      let bg =
-        sheen +
-        ', linear-gradient(160deg, ' + hexToRgba(c, alpha + 0.1) + ', ' + hexToRgba(c, alpha) + ')';
-      let borderColor = hexToRgba(c, Math.min(0.5, alpha + 0.2));
+      // Gentle single-hue gradient (subtle, not glossy).
+      let bg = 'linear-gradient(155deg, ' + hexToRgba(c, alpha + 0.06) + ', ' + hexToRgba(c, alpha) + ')';
+      let borderColor = hexToRgba(c, Math.min(0.45, alpha + 0.18));
       let textColor = '#f5f6fa';
       if (done) {
         bg = 'linear-gradient(160deg, #16171d, #0f1014)';
@@ -1117,10 +1114,10 @@ export default class App extends React.Component {
           position: 'absolute',
           ...rectStyle,
           background: bg,
-          backdropFilter: done ? undefined : 'blur(8px)',
-          WebkitBackdropFilter: done ? undefined : 'blur(8px)',
+          backdropFilter: done ? undefined : 'blur(10px) saturate(120%)',
+          WebkitBackdropFilter: done ? undefined : 'blur(10px) saturate(120%)',
           color: textColor,
-          borderRadius: '11px',
+          borderRadius: '12px',
           padding: V ? '11px 6px' : '6px 11px',
           boxSizing: 'border-box',
           cursor: isDragging || isGroupMoving ? 'grabbing' : 'grab',
