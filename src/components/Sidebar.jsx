@@ -15,13 +15,43 @@ export default function Sidebar(props) {
     addTrack,
     resizeHandleStyle,
     onSidebarResizeDown,
+    toggleSidebar,
+    sidebarCollapsed,
   } = props;
+
+  const collapseBtnStyle = {
+    flex: 'none',
+    width: '22px',
+    height: '22px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(255,255,255,.05)',
+    border: '1px solid rgba(255,255,255,.12)',
+    borderRadius: '6px',
+    color: 'rgba(231,233,238,.7)',
+    fontSize: '13px',
+    lineHeight: 1,
+    cursor: 'pointer',
+    padding: 0,
+  };
 
   return (
     <div style={sidebarWrapStyle}>
-      <div style={gutterHeaderStyle}>{gutterHeaderLabel}</div>
+      <div style={gutterHeaderStyle}>
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          style={collapseBtnStyle}
+        >
+          {sidebarCollapsed ? '»' : '«'}
+        </button>
+        {!sidebarCollapsed && <span>{gutterHeaderLabel}</span>}
+      </div>
 
-      {isVertical && (
+      {!sidebarCollapsed && isVertical && (
         <div style={timeColStyle}>
           {hourTicksV.map((tick, i) => (
             <div key={i} style={tick.style}>{tick.label}</div>
@@ -32,7 +62,7 @@ export default function Sidebar(props) {
         </div>
       )}
 
-      {notVertical && (
+      {!sidebarCollapsed && notVertical && (
         <>
           {lanes.map(lane => (
             <div key={lane.index} style={lane.rowStyle}>
@@ -101,7 +131,7 @@ export default function Sidebar(props) {
         </>
       )}
 
-      <div onMouseDown={onSidebarResizeDown} style={resizeHandleStyle} />
+      {!sidebarCollapsed && <div onMouseDown={onSidebarResizeDown} style={resizeHandleStyle} />}
     </div>
   );
 }

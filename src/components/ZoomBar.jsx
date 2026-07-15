@@ -1,59 +1,57 @@
 import React from 'react';
 
+// Compact, inline density control designed to sit at the far-right of the
+// header toolbar. Orientation-aware label/unit are supplied by the caller
+// (time px/min in horizontal mode, track-column width in vertical mode).
 export default function ZoomBar(props) {
   const { value, min = 1, max = 12, step = 0.5, label = 'Density', unit = 'px/min', onChange } = props;
 
   const barStyle = {
-    display: 'flex',
+    display: 'inline-flex',
     alignItems: 'center',
-    gap: '12px',
-    width: '100%',
-    padding: '8px 26px',
-    background: '#151519',
-    borderBottom: '1px solid rgba(255,255,255,.08)',
+    gap: '8px',
     flex: 'none',
   };
 
   const labelStyle = {
-    fontSize: '11px',
-    letterSpacing: '.08em',
-    color: 'rgba(231,233,238,.45)',
+    fontSize: '10px',
+    letterSpacing: '.09em',
+    color: 'rgba(231,233,238,.42)',
     fontWeight: 600,
     textTransform: 'uppercase',
-    minWidth: '86px',
-  };
-
-  const hintStyle = {
-    fontSize: '13px',
-    color: 'rgba(231,233,238,.35)',
-    fontWeight: 600,
-    userSelect: 'none',
+    whiteSpace: 'nowrap',
   };
 
   const buttonStyle = {
     background: 'rgba(255,255,255,.06)',
     border: '1px solid rgba(255,255,255,.12)',
     color: '#e7e9ee',
-    borderRadius: '8px',
-    width: '28px',
-    height: '28px',
+    borderRadius: '7px',
+    width: '24px',
+    height: '24px',
     cursor: 'pointer',
-    fontSize: '16px',
+    fontSize: '15px',
     lineHeight: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
   };
 
   const sliderStyle = {
-    flex: 1,
+    width: '120px',
+    flex: 'none',
     accentColor: '#22d3ee',
     cursor: 'pointer',
   };
 
   const readoutStyle = {
     fontFamily: "'JetBrains Mono',monospace",
-    fontSize: '12px',
+    fontSize: '11px',
     color: '#22d3ee',
-    minWidth: '84px',
+    minWidth: '70px',
     textAlign: 'right',
+    whiteSpace: 'nowrap',
   };
 
   const round2 = (n) => +Number(n).toFixed(2);
@@ -61,12 +59,11 @@ export default function ZoomBar(props) {
   const increase = () => onChange(Math.min(max, round2(value + step)));
 
   return (
-    <div style={barStyle}>
+    <div style={barStyle} title={`${label} · ${value} ${unit}`}>
       <span style={labelStyle}>{label}</span>
-      <button type="button" style={buttonStyle} onClick={decrease}>
+      <button type="button" style={buttonStyle} onClick={decrease} aria-label="Decrease">
         −
       </button>
-      <span style={hintStyle}>«</span>
       <input
         type="range"
         min={min}
@@ -76,8 +73,7 @@ export default function ZoomBar(props) {
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={sliderStyle}
       />
-      <span style={hintStyle}>»</span>
-      <button type="button" style={buttonStyle} onClick={increase}>
+      <button type="button" style={buttonStyle} onClick={increase} aria-label="Increase">
         +
       </button>
       <span style={readoutStyle}>

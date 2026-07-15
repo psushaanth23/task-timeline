@@ -1,6 +1,5 @@
 import React from 'react';
 import Header from './components/Header.jsx';
-import ZoomBar from './components/ZoomBar.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Timeline from './components/Timeline.jsx';
 import { PALETTE, LAYOUT, genTrackId, makeTracks, seedTasks } from './lib/constants.js';
@@ -67,6 +66,9 @@ export default class App extends React.Component {
       getVertical: () => this.state.orientation === 'vertical',
       onTick: (x, y) => this.onScrollTick(x, y),
     });
+    this.undoStack = [];
+    this.redoStack = [];
+    this.onDocKeyDown = this.onDocKeyDown.bind(this);
   }
 
   // Time density (px per minute) for the current orientation. Vertical mode
@@ -104,6 +106,7 @@ export default class App extends React.Component {
       });
     }
     this.timer = setInterval(() => this.setState({ nowMin: currentMin() }), 15000);
+    document.addEventListener('keydown', this.onDocKeyDown);
     const doJump = () => this.jumpToNow(false);
     requestAnimationFrame(() => requestAnimationFrame(doJump));
     setTimeout(doJump, 150);
@@ -111,6 +114,7 @@ export default class App extends React.Component {
 
   componentWillUnmount() {
     clearInterval(this.timer);
+    document.removeEventListener('keydown', this.onDocKeyDown);
     this.scroller.stop();
     this.removeBoardListeners();
     document.removeEventListener('mousemove', this.onTrackDragMove);
@@ -124,8 +128,78 @@ export default class App extends React.Component {
   persist(tasks, tracks) {
     const t = tasks || this.state.tasks;
     const tr = tracks || this.state.tracks;
+    // Snapshot the pre-change state for undo (arrays are always replaced
+    // immutably, so holding references is safe).
+    this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks });
+    if (this.undoStack.length > 100) this.undoStack.shift();
+    this.redoStack = [];
     saveData(t, tr);
     this.setState({ tasks: t, tracks: tr });
+  }
+
+  undo() {
+    if (!this.undoStack.length) return;
+    const prev = this.undoStack.pop();
+    this.redoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks });
+    saveData(prev.tasks, prev.tracks);
+    const liveIds = new Set(prev.tasks.map((t) => t.id));
+    this.setState({
+      tasks: prev.tasks,
+      tracks: prev.tracks,
+      selection: this.state.selection.filter((id) => liveIds.has(id)),
+    });
+  }
+
+  redo() {
+    if (!this.redoStack.length) return;
+    const next = this.redoStack.pop();
+    this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks });
+    saveData(next.tasks, next.tracks);
+    const liveIds = new Set(next.tasks.map((t) => t.id));
+    this.setState({
+      tasks: next.tasks,
+      tracks: next.tracks,
+      selection: this.state.selection.filter((id) => liveIds.has(id)),
+    });
+  }
+
+  deleteSelected() {
+    if (!this.state.selection.length) return;
+    const sel = new Set(this.state.selection);
+    const tasks = this.state.tasks
+      .filter((t) => !sel.has(t.id))
+      .map((t) => ({ ...t, parentIds: (t.parentIds || []).filter((pid) => !sel.has(pid)) }));
+    this.setState({ selection: [] });
+    this.persist(tasks);
+  }
+
+  onDocKeyDown(e) {
+    const el = document.activeElement;
+    const typing =
+      el &&
+      (el.tagName === 'INPUT' ||
+        el.tagName === 'TEXTAREA' ||
+        el.tagName === 'SELECT' ||
+        el.isContentEditable);
+    if (typing) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault();
+      if (e.shiftKey) this.redo();
+      else this.undo();
+      return;
+    }
+    if (mod && (e.key === 'y' || e.key === 'Y')) {
+      e.preventDefault();
+      this.redo();
+      return;
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (this.state.selection.length) {
+        e.preventDefault();
+        this.deleteSelected();
+      }
+    }
   }
 
   persistView(next) {
@@ -670,11 +744,6 @@ export default class App extends React.Component {
     this.setState({ popupOpen: false, draft: null });
   }
 
-  clearAll() {
-    this.setState({ selection: [] });
-    this.persist([], this.state.tracks);
-  }
-
   computeVals() {
     const V = this.state.orientation === 'vertical';
     const px = this.timeDensity();
@@ -1110,7 +1179,9 @@ export default class App extends React.Component {
       position: 'relative',
       height: contentH + 'px',
       width: contentW + 'px',
-      backgroundColor: '#101014',
+      // Slightly translucent so the deep-space / Earth-horizon backdrop on the
+      // app root subtly bleeds through the board while staying dark.
+      backgroundColor: 'rgba(16,17,20,0.82)',
     };
 
     const m = this.state.marquee;
@@ -1243,10 +1314,11 @@ export default class App extends React.Component {
       notVertical: !V,
       orientationLabel: V ? '↕ Switch to horizontal' : '↔ Switch to vertical',
       sidebarToggleLabel: this.state.sidebarCollapsed ? '» Show sidebar' : '« Hide sidebar',
+      sidebarCollapsed: this.state.sidebarCollapsed,
       gutterHeaderLabel: V ? 'Time' : 'Tracks',
       sidebarWrapStyle: {
         flex: 'none',
-        width: (this.state.sidebarCollapsed ? 0 : this.state.sidebarWidth) + 'px',
+        width: (this.state.sidebarCollapsed ? 38 : this.state.sidebarWidth) + 'px',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
@@ -1262,7 +1334,8 @@ export default class App extends React.Component {
         height: barSize + 'px',
         display: 'flex',
         alignItems: 'center',
-        padding: '0 16px',
+        gap: '6px',
+        padding: '0 8px',
         fontSize: '11px',
         fontWeight: 600,
         letterSpacing: '.08em',
@@ -1365,7 +1438,6 @@ export default class App extends React.Component {
       save: () => this.save(),
       remove: () => this.remove(),
       close: () => this.close(),
-      clearAll: () => this.clearAll(),
       stop: (e) => e.stopPropagation(),
     };
   }
@@ -1377,8 +1449,13 @@ export default class App extends React.Component {
       flexDirection: 'column',
       height: '100vh',
       overflow: 'hidden',
+      // Deep-space backdrop with a faint Earth-limb / atmosphere glow arcing
+      // across the bottom. Kept very dark and low-contrast for readability.
       background:
-        'radial-gradient(1200px 600px at 80% -10%, rgba(20,184,166,.09), transparent 60%),radial-gradient(1000px 500px at 0% 110%, rgba(99,102,241,.11), transparent 60%),#121214',
+        'radial-gradient(150% 78% at 50% 132%, rgba(34,102,120,0.22), rgba(14,32,46,0.10) 40%, rgba(9,12,17,0) 62%),' +
+        'radial-gradient(120% 60% at 50% 128%, rgba(80,180,190,0.12), rgba(9,12,17,0) 46%),' +
+        'radial-gradient(1000px 520px at 6% -12%, rgba(99,102,241,0.10), transparent 60%),' +
+        'linear-gradient(180deg, #090a0e 0%, #0a0c11 55%, #0b1016 100%)',
     };
     const boardWrapStyle = {
       flex: 1,
@@ -1390,15 +1467,6 @@ export default class App extends React.Component {
     return (
       <div style={rootStyle}>
         <Header {...vals} />
-        <ZoomBar
-          value={vals.zoomBarValue}
-          min={vals.zoomBarMin}
-          max={vals.zoomBarMax}
-          step={vals.zoomBarStep}
-          label={vals.zoomBarLabel}
-          unit={vals.zoomBarUnit}
-          onChange={vals.onZoomBarChange}
-        />
         <div ref={vals.boardRef} style={boardWrapStyle}>
           <Sidebar {...vals} />
           <Timeline {...vals} />
