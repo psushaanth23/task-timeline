@@ -211,14 +211,38 @@ export default class App extends React.Component {
 
   setZoom(z) {
     const zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
-    this.setState({ zoom });
-    this.persistView({ zoom });
+    // Anchor the time at the horizontal center of the viewport so the timeline
+    // expands/shrinks from the center instead of jumping.
+    const sc = this.scrollRef.current;
+    const oldPx = this.timeDensity();
+    const centerTime = sc ? (sc.scrollLeft + sc.clientWidth / 2) / oldPx : null;
+    this.setState({ zoom }, () => {
+      this.persistView({ zoom });
+      if (sc && centerTime != null) {
+        requestAnimationFrame(() => {
+          const newPx = this.timeDensity();
+          sc.scrollLeft = Math.max(0, centerTime * newPx - sc.clientWidth / 2);
+        });
+      }
+    });
   }
 
   setTrackWidth(w) {
     const trackWidth = Math.max(TRACKW_MIN, Math.min(TRACKW_MAX, w));
-    this.setState({ trackWidth });
-    this.persistView({ trackWidth });
+    // Vertical density scales the track (cross) axis horizontally; anchor the
+    // centered track column so the horizontal view doesn't jump.
+    const sc = this.scrollRef.current;
+    const oldCross = this.laneCross();
+    const centerCross = sc ? (sc.scrollLeft + sc.clientWidth / 2) / oldCross : null;
+    this.setState({ trackWidth }, () => {
+      this.persistView({ trackWidth });
+      if (sc && centerCross != null) {
+        requestAnimationFrame(() => {
+          const newCross = this.laneCross();
+          sc.scrollLeft = Math.max(0, centerCross * newCross - sc.clientWidth / 2);
+        });
+      }
+    });
   }
 
   trackFor(lane) {
@@ -1060,10 +1084,13 @@ export default class App extends React.Component {
             this._dragJustHappened = false;
             return;
           }
-          // Double-click (detail 2) schedules inline title editing; if a third
-          // click arrives within the window it's a triple-click, so cancel the
-          // edit and toggle done/blackout instead. Single clicks fall through.
-          if (e.detail === 2) {
+          // Single click (detail 1) selects just this task (same cyan-ring
+          // selection state used by the marquee). Double-click (detail 2)
+          // schedules inline title editing; a third click within the window is
+          // a triple-click, so cancel the edit and toggle done/blackout.
+          if (e.detail === 1) {
+            this.setState({ selection: [t.id] });
+          } else if (e.detail === 2) {
             clearTimeout(this._clickTimer);
             this._clickTimer = setTimeout(() => this.startInlineEdit(t), 260);
           } else if (e.detail >= 3) {
@@ -1099,7 +1126,7 @@ export default class App extends React.Component {
           flexDirection: 'column',
           justifyContent: 'center',
           gap: '1px',
-          textDecoration: done ? 'line-through' : 'none',
+          textDecoration: 'none',
           opacity: done ? 0.85 : 1,
           zIndex: isDragging || isGroupMoving ? 6 : 3,
           border: '1px solid ' + borderColor,
