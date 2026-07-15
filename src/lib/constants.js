@@ -24,7 +24,7 @@ export const TRACK_NAMES = [
 
 // Layout constants for the time/track axes.
 export const LAYOUT = {
-  laneSize: 72,
+  laneSize: 54,
   dateBarH: 24,
   hourBarH: 40,
   trackHeaderH: 58,
