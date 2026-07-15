@@ -61,16 +61,25 @@ export default function Timeline(props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId]);
 
+  // Titles wrap across as many lines as fit the card, then clamp with an
+  // ellipsis (line count is per-task, tuned to the card height — see t.titleLines).
   const titleBaseStyle = {
     fontSize: '13px',
     fontWeight: 600,
-    whiteSpace: 'nowrap',
+    display: '-webkit-box',
+    WebkitBoxOrient: 'vertical',
     overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    lineHeight: 1.2,
+    whiteSpace: 'normal',
+    overflowWrap: 'break-word',
+    wordBreak: 'break-word',
+    lineHeight: 1.25,
+    width: '100%',
     textShadow: '0 1px 3px rgba(0,0,0,.7)',
   };
   const titleEditingStyle = {
+    // While renaming, render as a normal wrapping block (no line clamp) so the
+    // full text is visible/editable and the caret behaves.
+    display: 'block',
     overflow: 'visible',
     textOverflow: 'clip',
     outline: 'none',
@@ -307,7 +316,7 @@ export default function Timeline(props) {
                   ? { ...titleBaseStyle, ...titleEditingStyle }
                   : t.narrow
                     ? { ...titleBaseStyle, display: 'none' }
-                    : titleBaseStyle
+                    : { ...titleBaseStyle, WebkitLineClamp: t.titleLines }
               }
             >
               {t.editing || t.narrow ? null : t.title}

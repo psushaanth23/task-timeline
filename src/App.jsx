@@ -1561,6 +1561,14 @@ export default class App extends React.Component {
       // suffice. The label is pointer-events:none so it never blocks
       // drag/resize/select/rename.
       const narrow = !V && len < NARROW_CARD_PX;
+      // How many lines the title may wrap to before ellipsis-clamping. Derived
+      // from the card's available height so tall cards (e.g. long vertical
+      // tasks) show much more of the name while short cards clamp down to 1
+      // line. The cross-axis card size differs by orientation: vertical cards
+      // grow with duration (len), horizontal cards are the fixed lane height.
+      const TITLE_LINE_PX = 16; // ~13px * 1.25 line-height
+      const titleAvailPx = (V ? len : laneLen) - (V ? 22 : 12) - 17; // padding + time label
+      const titleLines = Math.max(1, Math.min(8, Math.floor(titleAvailPx / TITLE_LINE_PX)));
       const externalLabelStyle = {
         position: 'absolute',
         left: '100%',
@@ -1596,6 +1604,7 @@ export default class App extends React.Component {
         id: t.id,
         title: t.title,
         narrow,
+        titleLines,
         externalLabelStyle,
         hud,
         done,
