@@ -76,6 +76,27 @@ select,
     opacity: 1;
   }
 }
+/* Tag "+" affordance: subtle, revealed on track-row hover so untagged tracks
+   stay clean. The empty tag row is hidden until the row is hovered. */
+.tag-add {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.track-row:hover .tag-add {
+  opacity: 0.6;
+}
+.tag-add:hover {
+  opacity: 1 !important;
+  border-color: rgba(20, 184, 166, 0.6) !important;
+  color: #14b8a6 !important;
+}
+.tag-row-empty {
+  display: none !important;
+}
+.track-row:hover .tag-row-empty {
+  display: flex !important;
+}
+
 @keyframes trackTipIn {
   from {
     opacity: 0;

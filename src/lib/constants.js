@@ -36,7 +36,16 @@ export function genTrackId() {
 }
 
 export function makeTracks() {
-  return TRACK_NAMES.map((n, i) => ({ id: 'trk' + i, name: n, color: PALETTE[i % PALETTE.length] }));
+  return TRACK_NAMES.map((n, i) => ({
+    id: 'trk' + i,
+    name: n,
+    color: PALETTE[i % PALETTE.length],
+    tagIds: [],
+  }));
+}
+
+export function genTagId() {
+  return 'tag' + Date.now() + Math.floor(Math.random() * 9999);
 }
 
 export function seedTasks() {

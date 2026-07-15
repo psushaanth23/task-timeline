@@ -1,6 +1,7 @@
 import React from 'react';
 import { HoverButton } from './ui.jsx';
 import TrackName from './TrackName.jsx';
+import TrackTags from './TrackTags.jsx';
 
 export default function Sidebar(props) {
   const {
@@ -80,6 +81,7 @@ export default function Sidebar(props) {
           {lanes.map(lane => (
             <div
               key={lane.index}
+              className="track-row"
               style={lane.rowStyle}
               onMouseDown={lane.onRowMouseDown}
               title="Drag to reorder · double-click name to rename"
@@ -90,14 +92,17 @@ export default function Sidebar(props) {
                 title="Click to change track color"
                 style={lane.dotStyle}
               />
-              <TrackName
-                name={lane.name}
-                style={lane.nameStyle}
-                editing={lane.editing}
-                onDoubleClick={lane.onStartEdit}
-                onRename={lane.onRename}
-                onKeyDown={lane.onKeyDown}
-              />
+              <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <TrackName
+                  name={lane.name}
+                  style={lane.nameStyle}
+                  editing={lane.editing}
+                  onDoubleClick={lane.onStartEdit}
+                  onRename={lane.onRename}
+                  onKeyDown={lane.onKeyDown}
+                />
+                <TrackTags tags={lane.tagList} onAdd={lane.onAddTag} />
+              </div>
               <HoverButton
                 onClick={lane.onDelete}
                 title="Delete track"

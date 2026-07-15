@@ -2,7 +2,8 @@ import React from 'react';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Timeline from './components/Timeline.jsx';
-import { PALETTE, LAYOUT, genTrackId, makeTracks, seedTasks } from './lib/constants.js';
+import { PALETTE, LAYOUT, genTrackId, genTagId, makeTracks, seedTasks } from './lib/constants.js';
+import TagPicker from './components/TagPicker.jsx';
 import { fmt, fmtHour, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
@@ -56,6 +57,10 @@ export default class App extends React.Component {
       selection: [],
       trackDrag: null,
       editingTrack: null,
+      // Global tag collection { id, label, color }; per-track assignment lives
+      // on track.tagIds. tagPicker holds the open popover's { trackIndex, rect }.
+      tags: [],
+      tagPicker: null,
       wiring: null,
       orientation: 'horizontal',
       sidebarWidth: 150,
@@ -112,6 +117,21 @@ export default class App extends React.Component {
     return saved && typeof saved.origin === 'number' ? saved.origin : localMidnightMs();
   }
 
+  // Ensure every track has an id and a tagIds array (migration for older saved
+  // state that predates tags).
+  normalizeTracks(rawTracks, fallback) {
+    let tr = rawTracks && rawTracks.length ? rawTracks : fallback;
+    return tr.map((t) => ({
+      ...(t.id ? t : { ...t, id: genTrackId() }),
+      tagIds: Array.isArray(t.tagIds) ? t.tagIds : [],
+    }));
+  }
+
+  // Tags default to [] so state saved before this feature still loads.
+  normalizeTags(saved) {
+    return saved && Array.isArray(saved.tags) ? saved.tags : [];
+  }
+
   // Persist form: each task carries an absolute `startMs` so the file is
   // origin-independent and round-trips a real date+time.
   serializeTasks(tasks, originMs) {
@@ -132,18 +152,28 @@ export default class App extends React.Component {
   }
 
   // Write the local (localStorage) cache in the absolute persist form.
-  saveLocal(tasks, tracks) {
-    saveData(this.serializeTasks(tasks, this.state.originMs), tracks, this.state.originMs);
+  saveLocal(tasks, tracks, tags) {
+    saveData(
+      this.serializeTasks(tasks, this.state.originMs),
+      tracks,
+      this.state.originMs,
+      tags ?? this.state.tags,
+    );
   }
 
   componentDidMount() {
     const s = loadData();
     if (s) {
       const originMs = this.resolveOrigin(s);
-      let tr = s.tracks && s.tracks.length ? s.tracks : this.state.tracks;
-      tr = tr.map((t) => (t.id ? t : { ...t, id: genTrackId() }));
+      const tr = this.normalizeTracks(s.tracks, this.state.tracks);
       const tasks = this.hydrateTasks(s.tasks, originMs);
-      this.setState({ tasks, tracks: tr, originMs, nowMin: minutesSince(originMs) });
+      this.setState({
+        tasks,
+        tracks: tr,
+        tags: this.normalizeTags(s),
+        originMs,
+        nowMin: minutesSince(originMs),
+      });
     }
     const v = loadView();
     if (v) {
@@ -182,6 +212,7 @@ export default class App extends React.Component {
     return {
       tasks: this.serializeTasks(this.state.tasks, this.state.originMs),
       tracks: this.state.tracks,
+      tags: this.state.tags,
       origin: this.state.originMs,
       view: this.currentView(),
     };
@@ -213,14 +244,14 @@ export default class App extends React.Component {
     if (disk && Array.isArray(disk.tasks) && !this._dirtyBeforeHydration) {
       // Disk wins: apply its tasks/tracks/view and mirror into the LS cache.
       const originMs = this.resolveOrigin(disk);
-      let tr = disk.tracks && disk.tracks.length ? disk.tracks : this.state.tracks;
-      tr = tr.map((t) => (t.id ? t : { ...t, id: genTrackId() }));
+      const tr = this.normalizeTracks(disk.tracks, this.state.tracks);
       const tasks = this.hydrateTasks(disk.tasks, originMs);
       const view = disk.view || {};
       this.setState(
         {
           tasks,
           tracks: tr,
+          tags: this.normalizeTags(disk),
           originMs,
           nowMin: minutesSince(originMs),
           orientation: view.orientation || this.state.orientation,
@@ -231,7 +262,7 @@ export default class App extends React.Component {
           trackWidth: view.trackWidth ?? this.state.trackWidth,
         },
         () => {
-          this.saveLocal(this.state.tasks, this.state.tracks);
+          this.saveLocal(this.state.tasks, this.state.tracks, this.state.tags);
           saveView(this.currentView());
           this._hydrated = true;
           this.jumpToNow(false);
@@ -260,28 +291,31 @@ export default class App extends React.Component {
     document.removeEventListener('mouseup', this.onSidebarResizeUp);
   }
 
-  persist(tasks, tracks) {
+  persist(tasks, tracks, tags) {
     const t = tasks || this.state.tasks;
     const tr = tracks || this.state.tracks;
+    const tg = tags || this.state.tags;
     // Snapshot the pre-change state for undo (arrays are always replaced
     // immutably, so holding references is safe).
-    this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks });
+    this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks, tags: this.state.tags });
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
-    this.saveLocal(t, tr);
-    this.setState({ tasks: t, tracks: tr });
+    this.saveLocal(t, tr, tg);
+    this.setState({ tasks: t, tracks: tr, tags: tg });
     this.syncDisk();
   }
 
   undo() {
     if (!this.undoStack.length) return;
     const prev = this.undoStack.pop();
-    this.redoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks });
-    this.saveLocal(prev.tasks, prev.tracks);
+    this.redoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks, tags: this.state.tags });
+    const prevTags = prev.tags ?? this.state.tags;
+    this.saveLocal(prev.tasks, prev.tracks, prevTags);
     const liveIds = new Set(prev.tasks.map((t) => t.id));
     this.setState({
       tasks: prev.tasks,
       tracks: prev.tracks,
+      tags: prevTags,
       selection: this.state.selection.filter((id) => liveIds.has(id)),
     });
     this.syncDisk();
@@ -290,12 +324,14 @@ export default class App extends React.Component {
   redo() {
     if (!this.redoStack.length) return;
     const next = this.redoStack.pop();
-    this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks });
-    this.saveLocal(next.tasks, next.tracks);
+    this.undoStack.push({ tasks: this.state.tasks, tracks: this.state.tracks, tags: this.state.tags });
+    const nextTags = next.tags ?? this.state.tags;
+    this.saveLocal(next.tasks, next.tracks, nextTags);
     const liveIds = new Set(next.tasks.map((t) => t.id));
     this.setState({
       tasks: next.tasks,
       tracks: next.tracks,
+      tags: nextTags,
       selection: this.state.selection.filter((id) => liveIds.has(id)),
     });
     this.syncDisk();
@@ -393,6 +429,7 @@ export default class App extends React.Component {
       this.state.tracks[lane] || {
         name: 'Track ' + (lane + 1),
         color: this.palette[lane % this.palette.length],
+        tagIds: [],
       }
     );
   }
@@ -404,6 +441,7 @@ export default class App extends React.Component {
         id: genTrackId(),
         name: 'Track ' + (tracks.length + 1),
         color: this.palette[tracks.length % this.palette.length],
+        tagIds: [],
       });
     const cur = tracks[index].color;
     const idx = this.palette.indexOf(cur);
@@ -418,6 +456,7 @@ export default class App extends React.Component {
         id: genTrackId(),
         name: 'Track ' + (tracks.length + 1),
         color: this.palette[tracks.length % this.palette.length],
+        tagIds: [],
       });
     tracks[index] = { ...tracks[index], name: (name || '').trim() || 'Track ' + (index + 1) };
     this.persist(null, tracks);
@@ -429,8 +468,69 @@ export default class App extends React.Component {
       id: genTrackId(),
       name: 'Track ' + (tracks.length + 1),
       color: this.palette[tracks.length % this.palette.length],
+      tagIds: [],
     });
     this.persist(null, tracks);
+  }
+
+  // ---- Tags ----------------------------------------------------------------
+
+  // Pick the first PALETTE color not already used by a tag; fall back to
+  // cycling by count once every color is taken.
+  nextTagColor() {
+    const used = new Set(this.state.tags.map((t) => t.color));
+    return PALETTE.find((c) => !used.has(c)) || PALETTE[this.state.tags.length % PALETTE.length];
+  }
+
+  openTagPicker(trackIndex, rect) {
+    this.setState({ tagPicker: { trackIndex, rect } });
+  }
+
+  closeTagPicker() {
+    this.setState({ tagPicker: null });
+  }
+
+  // Toggle a tag's assignment on a track.
+  toggleTrackTag(trackIndex, tagId) {
+    const tracks = this.state.tracks.map((tr, i) => {
+      if (i !== trackIndex) return tr;
+      const ids = tr.tagIds || [];
+      return { ...tr, tagIds: ids.includes(tagId) ? ids.filter((x) => x !== tagId) : [...ids, tagId] };
+    });
+    this.persist(null, tracks);
+  }
+
+  // Create a global tag (reusing an existing one with the same label) and
+  // assign it to the track.
+  createAndAssignTag(trackIndex, label) {
+    const lbl = (label || '').trim();
+    if (!lbl) return;
+    let tag = this.state.tags.find((t) => t.label.toLowerCase() === lbl.toLowerCase());
+    let tags = this.state.tags;
+    if (!tag) {
+      tag = { id: genTagId(), label: lbl, color: this.nextTagColor() };
+      tags = [...this.state.tags, tag];
+    }
+    const tracks = this.state.tracks.map((tr, i) => {
+      if (i !== trackIndex) return tr;
+      const ids = tr.tagIds || [];
+      return ids.includes(tag.id) ? tr : { ...tr, tagIds: [...ids, tag.id] };
+    });
+    this.persist(null, tracks, tags);
+  }
+
+  // Recolor a tag globally (cascades to every track that uses it).
+  setTagColor(tagId, color) {
+    const tags = this.state.tags.map((t) => (t.id === tagId ? { ...t, color } : t));
+    this.persist(null, null, tags);
+  }
+
+  // Relabel a tag globally.
+  setTagLabel(tagId, label) {
+    const lbl = (label || '').trim();
+    if (!lbl) return;
+    const tags = this.state.tags.map((t) => (t.id === tagId ? { ...t, label: lbl } : t));
+    this.persist(null, null, tags);
   }
 
   deleteTrack(index) {
@@ -970,6 +1070,9 @@ export default class App extends React.Component {
     const barSize = V ? trackHeaderH : rulerH;
     const selectionSet = new Set(this.state.selection);
 
+    const tagsById = {};
+    this.state.tags.forEach((tg) => (tagsById[tg.id] = tg));
+
     const trackDrag = this.state.trackDrag;
     const lanes = Array.from({ length: laneCount }, (_, i) => {
       const tr = this.trackFor(i);
@@ -980,6 +1083,7 @@ export default class App extends React.Component {
         index: i,
         name: tr.name,
         editing: this.state.editingTrack === i,
+        tagList: (tr.tagIds || []).map((id) => tagsById[id]).filter(Boolean),
         rowStyle: {
           height: laneSize + 'px',
           display: 'flex',
@@ -1070,6 +1174,11 @@ export default class App extends React.Component {
           e.preventDefault();
           e.stopPropagation();
           this.startTrackEdit(i);
+        },
+        onAddTag: (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.openTagPicker(i, e.currentTarget.getBoundingClientRect());
         },
         onRename: (e) => this.commitTrackEdit(i, e.target.innerText),
         onKeyDown: (e) => {
@@ -1719,6 +1828,8 @@ export default class App extends React.Component {
       overflowY: 'auto',
       overflowX: 'hidden',
     };
+    const tp = this.state.tagPicker;
+    const pickerTrack = tp ? this.state.tracks[tp.trackIndex] : null;
     return (
       <div style={rootStyle}>
         <Header {...vals} />
@@ -1726,6 +1837,18 @@ export default class App extends React.Component {
           <Sidebar {...vals} />
           <Timeline {...vals} />
         </div>
+        {tp && pickerTrack && (
+          <TagPicker
+            rect={tp.rect}
+            allTags={this.state.tags}
+            assignedIds={pickerTrack.tagIds || []}
+            palette={PALETTE}
+            onToggle={(tagId) => this.toggleTrackTag(tp.trackIndex, tagId)}
+            onCreate={(label) => this.createAndAssignTag(tp.trackIndex, label)}
+            onSetColor={(tagId, color) => this.setTagColor(tagId, color)}
+            onClose={() => this.closeTagPicker()}
+          />
+        )}
       </div>
     );
   }
