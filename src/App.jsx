@@ -7,6 +7,7 @@ import { currentMin, fmt, fmtHour, durLabel } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
 import { loadData, saveData, loadView, saveView } from './lib/storage.js';
+import { loadState, saveState } from './lib/remoteStore.js';
 import { EdgeAutoScroller } from './lib/autoscroll.js';
 
 // Horizontal mode: slider controls time density (pixels per minute).
@@ -64,6 +65,13 @@ export default class App extends React.Component {
     });
     this.undoStack = [];
     this.redoStack = [];
+    // Disk-persistence state: disk is the source of truth, localStorage is a
+    // fast-paint cache + offline fallback. `_hydrated` gates disk writes until
+    // the async disk load resolves; `_dirtyBeforeHydration` records whether the
+    // user edited during that window so we don't clobber their changes.
+    this._hydrated = false;
+    this._dirtyBeforeHydration = false;
+    this._diskTimer = null;
     this.onDocKeyDown = this.onDocKeyDown.bind(this);
   }
 
@@ -103,14 +111,95 @@ export default class App extends React.Component {
     }
     this.timer = setInterval(() => this.setState({ nowMin: currentMin() }), 15000);
     document.addEventListener('keydown', this.onDocKeyDown);
+    // Best-effort flush of any pending debounced disk write on page unload.
+    this._onBeforeUnload = () => this.flushDiskSave();
+    window.addEventListener('beforeunload', this._onBeforeUnload);
     const doJump = () => this.jumpToNow(false);
     requestAnimationFrame(() => requestAnimationFrame(doJump));
     setTimeout(doJump, 150);
+    // Disk is the source of truth: hydrate asynchronously after first paint.
+    this.hydrateFromDisk();
+  }
+
+  // Build the view-preferences object persisted to both localStorage and disk.
+  currentView() {
+    return {
+      orientation: this.state.orientation,
+      sidebarWidth: this.state.sidebarWidth,
+      sidebarCollapsed: this.state.sidebarCollapsed,
+      zoom: this.state.zoom,
+      trackWidth: this.state.trackWidth,
+    };
+  }
+
+  diskPayload() {
+    return { tasks: this.state.tasks, tracks: this.state.tracks, view: this.currentView() };
+  }
+
+  // Debounced, fire-and-forget disk write. No-ops until hydration completes so
+  // an in-flight load can't be overwritten by a stale save.
+  syncDisk() {
+    if (!this._hydrated) {
+      this._dirtyBeforeHydration = true;
+      return;
+    }
+    clearTimeout(this._diskTimer);
+    this._diskTimer = setTimeout(() => {
+      this._diskTimer = null;
+      saveState(this.diskPayload());
+    }, 350);
+  }
+
+  flushDiskSave() {
+    if (!this._hydrated || !this._diskTimer) return;
+    clearTimeout(this._diskTimer);
+    this._diskTimer = null;
+    saveState(this.diskPayload());
+  }
+
+  async hydrateFromDisk() {
+    const disk = await loadState();
+    if (disk && Array.isArray(disk.tasks) && !this._dirtyBeforeHydration) {
+      // Disk wins: apply its tasks/tracks/view and mirror into the LS cache.
+      let tr = disk.tracks && disk.tracks.length ? disk.tracks : this.state.tracks;
+      tr = tr.map((t) => (t.id ? t : { ...t, id: genTrackId() }));
+      const tasks = disk.tasks.map((t) => ({
+        ...t,
+        done: !!t.done,
+        parentIds: Array.isArray(t.parentIds) ? t.parentIds : t.parentId ? [t.parentId] : [],
+      }));
+      const view = disk.view || {};
+      this.setState(
+        {
+          tasks,
+          tracks: tr,
+          orientation: view.orientation || this.state.orientation,
+          sidebarWidth: view.sidebarWidth || this.state.sidebarWidth,
+          sidebarCollapsed:
+            view.sidebarCollapsed != null ? !!view.sidebarCollapsed : this.state.sidebarCollapsed,
+          zoom: view.zoom ?? this.state.zoom,
+          trackWidth: view.trackWidth ?? this.state.trackWidth,
+        },
+        () => {
+          saveData(this.state.tasks, this.state.tracks);
+          saveView(this.currentView());
+          this._hydrated = true;
+          this.jumpToNow(false);
+        },
+      );
+    } else {
+      // Nothing on disk yet (or the user already edited): seed disk from the
+      // current in-memory state (localStorage/seed or the fresh edits).
+      this._hydrated = true;
+      saveState(this.diskPayload());
+    }
   }
 
   componentWillUnmount() {
     clearInterval(this.timer);
+    this.flushDiskSave();
     document.removeEventListener('keydown', this.onDocKeyDown);
+    window.removeEventListener('beforeunload', this._onBeforeUnload);
     this.scroller.stop();
     this.removeBoardListeners();
     document.removeEventListener('mousemove', this.onTrackDragMove);
@@ -131,6 +220,7 @@ export default class App extends React.Component {
     this.redoStack = [];
     saveData(t, tr);
     this.setState({ tasks: t, tracks: tr });
+    this.syncDisk();
   }
 
   undo() {
@@ -144,6 +234,7 @@ export default class App extends React.Component {
       tracks: prev.tracks,
       selection: this.state.selection.filter((id) => liveIds.has(id)),
     });
+    this.syncDisk();
   }
 
   redo() {
@@ -157,6 +248,7 @@ export default class App extends React.Component {
       tracks: next.tracks,
       selection: this.state.selection.filter((id) => liveIds.has(id)),
     });
+    this.syncDisk();
   }
 
   deleteSelected() {
@@ -207,6 +299,7 @@ export default class App extends React.Component {
       trackWidth: next.trackWidth ?? this.state.trackWidth,
     };
     saveView(v);
+    this.syncDisk();
   }
 
   setZoom(z) {
