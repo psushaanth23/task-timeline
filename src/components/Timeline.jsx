@@ -28,7 +28,81 @@ export default function Timeline(props) {
     wireLive,
     taskViews,
     marqueeRect,
+    editingId,
+    editingTitle,
+    onCommitTitle,
+    onCancelTitle,
   } = props;
+
+  // Ref to the currently-editing title element; cancelRef distinguishes an
+  // Escape (cancel) blur from a normal commit blur.
+  const editRef = React.useRef(null);
+  const cancelRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!editingId) return;
+    const el = editRef.current;
+    if (!el) return;
+    // Seed the element's text imperatively (React renders no children for it, so
+    // subsequent re-renders won't clobber what the user types), then focus and
+    // select all so the user can immediately type a replacement name.
+    el.textContent = editingTitle || '';
+    const focusSelect = () => {
+      el.focus();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    };
+    requestAnimationFrame(focusSelect);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
+
+  const titleBaseStyle = {
+    fontSize: '13px',
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    lineHeight: 1.2,
+    textShadow: '0 1px 3px rgba(0,0,0,.7)',
+  };
+  const titleEditingStyle = {
+    overflow: 'visible',
+    textOverflow: 'clip',
+    outline: 'none',
+    cursor: 'text',
+    // Beat the app-root user-select:none so the caret and selection work.
+    userSelect: 'text',
+    WebkitUserSelect: 'text',
+    pointerEvents: 'auto',
+    background: 'rgba(0,0,0,.4)',
+    borderRadius: '4px',
+    padding: '0 3px',
+    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.35)',
+  };
+
+  const onTitleKeyDown = (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      cancelRef.current = false;
+      e.currentTarget.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelRef.current = true;
+      e.currentTarget.blur();
+    }
+  };
+  const onTitleBlur = (id, e) => {
+    if (cancelRef.current) {
+      cancelRef.current = false;
+      onCancelTitle();
+    } else {
+      onCommitTitle(id, e.currentTarget.textContent);
+    }
+  };
 
   return (
     <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'visible' }}>
@@ -154,17 +228,18 @@ export default function Timeline(props) {
               style={t.dotStartStyle}
             />
             <div
-              style={{
-                fontSize: '13px',
-                fontWeight: 600,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                lineHeight: 1.2,
-                textShadow: '0 1px 3px rgba(0,0,0,.7)',
-              }}
+              ref={t.editing ? editRef : null}
+              contentEditable={t.editing}
+              suppressContentEditableWarning
+              title={t.editing ? undefined : 'Double-click to rename'}
+              onMouseDown={t.editing ? (e) => e.stopPropagation() : undefined}
+              onClick={t.editing ? (e) => e.stopPropagation() : undefined}
+              onDoubleClick={t.editing ? (e) => e.stopPropagation() : undefined}
+              onKeyDown={t.editing ? onTitleKeyDown : undefined}
+              onBlur={t.editing ? (e) => onTitleBlur(t.id, e) : undefined}
+              style={t.editing ? { ...titleBaseStyle, ...titleEditingStyle } : titleBaseStyle}
             >
-              {t.title}
+              {t.editing ? null : t.title}
             </div>
             <div
               style={{

@@ -2,9 +2,8 @@ import React from 'react';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Timeline from './components/Timeline.jsx';
-import TaskModal from './components/TaskModal.jsx';
 import { PALETTE, LAYOUT, genTrackId, makeTracks, seedTasks } from './lib/constants.js';
-import { currentMin, minToInput, inputToMin, fmt, fmtHour, durLabel } from './lib/time.js';
+import { currentMin, fmt, fmtHour, durLabel } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
 import { loadData, saveData, loadView, saveView } from './lib/storage.js';
@@ -32,12 +31,8 @@ export default class App extends React.Component {
     this.state = {
       tasks: seedTasks(),
       tracks: makeTracks(),
-      popupOpen: false,
-      mode: 'add',
-      draft: null,
       nowMin: currentMin(),
-      dependQuery: '',
-      dependOpen: false,
+      editingId: null,
       drag: null,
       groupDrag: null,
       resize: null,
@@ -585,6 +580,9 @@ export default class App extends React.Component {
   onCardMouseDown(task, e) {
     e.stopPropagation();
     if (e.button !== 0) return;
+    // While inline-editing this card, let clicks place the caret / select text
+    // rather than starting a drag.
+    if (this.state.editingId === task.id) return;
     e.preventDefault();
     if (this.state.selection.includes(task.id)) {
       this.startGroupDrag(e);
@@ -719,47 +717,21 @@ export default class App extends React.Component {
     this.persist(tasks);
   }
 
-  openEdit(task) {
-    this.setState({
-      popupOpen: true,
-      mode: 'edit',
-      draft: { ...task, parentIds: (task.parentIds || []).slice() },
-      dependQuery: '',
-      dependOpen: false,
-    });
+  // Inline title editing (replaces the old modal).
+  startInlineEdit(task) {
+    this.setState({ editingId: task.id });
   }
 
-  setDraft(field, val) {
-    this.setState((s) => ({ draft: { ...s.draft, [field]: val } }));
+  commitInlineEdit(id, text) {
+    const title = (text || '').trim() || 'Untitled';
+    const tasks = this.state.tasks.map((t) => (t.id === id ? { ...t, title } : t));
+    this.setState({ editingId: null });
+    const cur = this.state.tasks.find((t) => t.id === id);
+    if (cur && cur.title !== title) this.persist(tasks);
   }
 
-  close() {
-    this.setState({ popupOpen: false, draft: null, dependOpen: false });
-  }
-
-  save() {
-    const d = this.state.draft;
-    const t = {
-      id: d.id || 'id' + Date.now() + Math.floor(Math.random() * 9999),
-      title: (d.title || '').trim() || 'Untitled',
-      lane: Number(d.lane),
-      start: d.start,
-      duration: Number(d.duration),
-      done: !!d.done,
-      parentIds: Array.isArray(d.parentIds) ? d.parentIds : [],
-    };
-    const tasks = d.id ? this.state.tasks.map((x) => (x.id === d.id ? t : x)) : [...this.state.tasks, t];
-    this.persist(tasks);
-    this.setState({ popupOpen: false, draft: null });
-  }
-
-  remove() {
-    const d = this.state.draft;
-    const tasks = this.state.tasks
-      .filter((x) => x.id !== d.id)
-      .map((x) => ({ ...x, parentIds: (x.parentIds || []).filter((pid) => pid !== d.id) }));
-    this.persist(tasks);
-    this.setState({ popupOpen: false, draft: null });
+  cancelInlineEdit() {
+    this.setState({ editingId: null });
   }
 
   computeVals() {
@@ -1079,6 +1051,7 @@ export default class App extends React.Component {
         id: t.id,
         title: t.title,
         done,
+        editing: this.state.editingId === t.id,
         timeLabel: fmt(start, this.props.timeFormat) + ' · ' + durLabel(duration),
         onClick: (e) => {
           e.stopPropagation();
@@ -1087,12 +1060,12 @@ export default class App extends React.Component {
             this._dragJustHappened = false;
             return;
           }
-          // Double-click (detail 2) schedules an edit; if a third click arrives
-          // within the window it's a triple-click, so cancel the edit and toggle
-          // the done/blackout state instead. Single clicks fall through.
+          // Double-click (detail 2) schedules inline title editing; if a third
+          // click arrives within the window it's a triple-click, so cancel the
+          // edit and toggle done/blackout instead. Single clicks fall through.
           if (e.detail === 2) {
             clearTimeout(this._clickTimer);
-            this._clickTimer = setTimeout(() => this.openEdit(t), 260);
+            this._clickTimer = setTimeout(() => this.startInlineEdit(t), 260);
           } else if (e.detail >= 3) {
             clearTimeout(this._clickTimer);
             this.toggleDone(t);
@@ -1300,55 +1273,9 @@ export default class App extends React.Component {
       };
     }
 
-    const d = this.state.draft;
-    const q = (this.state.dependQuery || '').toLowerCase();
-    const selectedSet = new Set(d ? d.parentIds || [] : []);
-    const candidateTasks = tasks.filter((t) => (!d || t.id !== d.id) && !selectedSet.has(t.id));
-    const filteredParentOptions = candidateTasks
-      .filter((t) => t.title.toLowerCase().includes(q))
-      .slice(0, 30)
-      .map((t) => ({
-        id: t.id,
-        title: t.title,
-        dotStyle: {
-          width: 9,
-          height: 9,
-          borderRadius: 3,
-          background: this.trackFor(t.lane).color,
-          flex: 'none',
-        },
-        onSelect: () => {
-          const pids = (this.state.draft.parentIds || []).slice();
-          if (!pids.includes(t.id)) pids.push(t.id);
-          this.setState({ draft: { ...this.state.draft, parentIds: pids }, dependQuery: '', dependOpen: false });
-        },
-      }));
-    const draftParentChips = d
-      ? (d.parentIds || []).map((pid) => {
-          const p = byId[pid];
-          const col = p ? this.trackFor(p.lane).color : '#888';
-          return {
-            id: pid,
-            title: p ? p.title : '(deleted)',
-            style: {
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '2px',
-              background: hexToRgba(col, 0.18),
-              border: '1px solid ' + hexToRgba(col, 0.5),
-              color: '#e7e9ee',
-              borderRadius: '20px',
-              padding: '4px 8px',
-              fontSize: '12px',
-            },
-            onRemove: () =>
-              this.setDraft(
-                'parentIds',
-                (this.state.draft.parentIds || []).filter((x) => x !== pid),
-              ),
-          };
-        })
-      : [];
+    const editingTask = this.state.editingId
+      ? tasks.find((t) => t.id === this.state.editingId)
+      : null;
 
     return {
       isVertical: V,
@@ -1447,39 +1374,11 @@ export default class App extends React.Component {
       zoomBarLabel: V ? 'Track width' : 'Density',
       zoomBarUnit: V ? 'px' : 'px/min',
       onZoomBarChange: V ? (w) => this.setTrackWidth(w) : (z) => this.setZoom(z),
-      popupOpen: this.state.popupOpen,
-      draft: d,
-      isEdit: this.state.mode === 'edit',
-      modalTitle: this.state.mode === 'edit' ? 'Edit task' : 'New task',
-      saveLabel: this.state.mode === 'edit' ? 'Save changes' : 'Add task',
-      draftStartInput: d ? minToInput(d.start) : '',
-      trackOptions: lanes.map((l) => ({ index: l.index, name: l.name })),
-      draftDot: d
-        ? {
-            width: '14px',
-            height: '14px',
-            borderRadius: '5px',
-            background: this.trackFor(d.lane).color,
-            boxShadow: '0 0 12px ' + this.trackFor(d.lane).color + '88',
-          }
-        : {},
-      dependQuery: this.state.dependQuery,
-      dependOpen: this.state.dependOpen,
-      filteredParentOptions,
-      noResults: filteredParentOptions.length === 0,
-      draftParentChips,
-      onDependInput: (e) => this.setState({ dependQuery: e.target.value, dependOpen: true }),
-      onDependFocus: () => this.setState({ dependOpen: true }),
-      onDependBlur: () => setTimeout(() => this.setState({ dependOpen: false }), 150),
-      onTitle: (e) => this.setDraft('title', e.target.value),
-      onStart: (e) => this.setDraft('start', inputToMin(e.target.value)),
-      onDuration: (e) => this.setDraft('duration', parseInt(e.target.value, 10)),
-      onTrack: (e) => this.setDraft('lane', parseInt(e.target.value, 10)),
       addTrack: () => this.addTrack(),
-      save: () => this.save(),
-      remove: () => this.remove(),
-      close: () => this.close(),
-      stop: (e) => e.stopPropagation(),
+      editingId: this.state.editingId,
+      editingTitle: editingTask ? editingTask.title : '',
+      onCommitTitle: (id, text) => this.commitInlineEdit(id, text),
+      onCancelTitle: () => this.cancelInlineEdit(),
     };
   }
 
@@ -1516,7 +1415,6 @@ export default class App extends React.Component {
           <Sidebar {...vals} />
           <Timeline {...vals} />
         </div>
-        {vals.popupOpen && <TaskModal {...vals} />}
       </div>
     );
   }
