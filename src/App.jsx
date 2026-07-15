@@ -1516,17 +1516,20 @@ export default class App extends React.Component {
       // Modern glassmorphism: no glossy sheen. Just a soft hairline top light
       // and a gentle ambient shadow for a clean, crisp, contemporary card.
       const glow = 'inset 0 1px 0 rgba(255,255,255,.12), 0 4px 16px rgba(0,0,0,.28)';
-      // Translucent but polished — a modest spectrum that stays see-through.
-      if (nowMin < start) {
-        alpha = 0.1;
-      } else if (nowMin >= end) {
-        alpha = 0.18;
+      // A task is "current" (in progress / focus) when now falls within its
+      // span. start/end are minute offsets from the same absolute origin as
+      // nowMin (= minutesSince(origin)), so this stays correct across midnight
+      // (offsets can exceed 1440). ANY in-progress task — on any track, in
+      // either orientation — must read bright/full-strength and breathe; it
+      // must never be dimmed by the distance-transparency spectrum.
+      const current = nowMin >= start && nowMin < end;
+      if (current) {
+        alpha = 0.42;
+        urgent = true;
+      } else if (nowMin < start) {
+        alpha = 0.1; // upcoming
       } else {
-        const prog = Math.max(0, Math.min(1, (nowMin - start) / duration));
-        alpha = 0.1 + prog * 0.3;
-        if (end - nowMin <= Math.min(15, duration * 0.25)) {
-          urgent = true;
-        }
+        alpha = 0.18; // already finished (by time)
       }
       // Gentle single-hue gradient (subtle, not glossy).
       let bg = 'linear-gradient(155deg, ' + hexToRgba(c, alpha + 0.06) + ', ' + hexToRgba(c, alpha) + ')';
