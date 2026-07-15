@@ -1,5 +1,6 @@
 import React from 'react';
 import Header from './components/Header.jsx';
+import ZoomBar from './components/ZoomBar.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Timeline from './components/Timeline.jsx';
 import TaskModal from './components/TaskModal.jsx';
@@ -8,6 +9,11 @@ import { currentMin, minToInput, inputToMin, fmt, fmtHour, durLabel } from './li
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
 import { loadData, saveData, loadView, saveView } from './lib/storage.js';
+import { EdgeAutoScroller } from './lib/autoscroll.js';
+
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 12;
+const ZOOM_STEP = 0.5;
 
 export default class App extends React.Component {
   constructor(props) {
@@ -26,26 +32,37 @@ export default class App extends React.Component {
       dependQuery: '',
       dependOpen: false,
       drag: null,
+      groupDrag: null,
+      resize: null,
+      marquee: null,
+      selection: [],
       trackDrag: null,
       wiring: null,
       orientation: 'horizontal',
       sidebarWidth: 150,
       sidebarCollapsed: false,
       sidebarResizing: null,
+      zoom: props.zoom ?? 4,
     };
     this.onBoardDblClick = this.onBoardDblClick.bind(this);
-    this.onDragMove = this.onDragMove.bind(this);
-    this.onDragUp = this.onDragUp.bind(this);
+    this.onBoardMouseDown = this.onBoardMouseDown.bind(this);
+    this.onBoardPointerMove = this.onBoardPointerMove.bind(this);
+    this.onBoardPointerUp = this.onBoardPointerUp.bind(this);
     this.onTrackDragMove = this.onTrackDragMove.bind(this);
     this.onTrackDragUp = this.onTrackDragUp.bind(this);
     this.onWireMove = this.onWireMove.bind(this);
     this.onWireUp = this.onWireUp.bind(this);
     this.onSidebarResizeMove = this.onSidebarResizeMove.bind(this);
     this.onSidebarResizeUp = this.onSidebarResizeUp.bind(this);
+    this.scroller = new EdgeAutoScroller({
+      getElement: () => this.scrollRef.current,
+      getVertical: () => this.state.orientation === 'vertical',
+      onTick: (x, y) => this.onScrollTick(x, y),
+    });
   }
 
   get zoom() {
-    return this.props.zoom ?? 2;
+    return this.state.zoom;
   }
 
   componentDidMount() {
@@ -55,6 +72,7 @@ export default class App extends React.Component {
       tr = tr.map((t) => (t.id ? t : { ...t, id: genTrackId() }));
       const tasks = s.tasks.map((t) => ({
         ...t,
+        done: !!t.done,
         parentIds: Array.isArray(t.parentIds) ? t.parentIds : t.parentId ? [t.parentId] : [],
       }));
       this.setState({ tasks, tracks: tr });
@@ -65,6 +83,7 @@ export default class App extends React.Component {
         orientation: v.orientation || 'horizontal',
         sidebarWidth: v.sidebarWidth || 150,
         sidebarCollapsed: !!v.sidebarCollapsed,
+        zoom: v.zoom ?? this.state.zoom,
       });
     }
     this.timer = setInterval(() => this.setState({ nowMin: currentMin() }), 15000);
@@ -75,8 +94,8 @@ export default class App extends React.Component {
 
   componentWillUnmount() {
     clearInterval(this.timer);
-    document.removeEventListener('mousemove', this.onDragMove);
-    document.removeEventListener('mouseup', this.onDragUp);
+    this.scroller.stop();
+    this.removeBoardListeners();
     document.removeEventListener('mousemove', this.onTrackDragMove);
     document.removeEventListener('mouseup', this.onTrackDragUp);
     document.removeEventListener('mousemove', this.onWireMove);
@@ -97,8 +116,15 @@ export default class App extends React.Component {
       orientation: next.orientation ?? this.state.orientation,
       sidebarWidth: next.sidebarWidth ?? this.state.sidebarWidth,
       sidebarCollapsed: next.sidebarCollapsed ?? this.state.sidebarCollapsed,
+      zoom: next.zoom ?? this.state.zoom,
     };
     saveView(v);
+  }
+
+  setZoom(z) {
+    const zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+    this.setState({ zoom });
+    this.persistView({ zoom });
   }
 
   trackFor(lane) {
@@ -154,6 +180,7 @@ export default class App extends React.Component {
       .filter((t) => t.lane !== index)
       .map((t) => (t.lane > index ? { ...t, lane: t.lane - 1 } : t))
       .map((t) => ({ ...t, parentIds: (t.parentIds || []).filter((pid) => !removedIds.includes(pid)) }));
+    this.setState({ selection: this.state.selection.filter((id) => !removedIds.includes(id)) });
     this.persist(tasks, tracks);
   }
 
@@ -247,7 +274,7 @@ export default class App extends React.Component {
     const el = this.contentRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const px = this.zoom;
+    const px = this.state.zoom;
     const laneSize = LAYOUT.laneSize;
     const V = this.state.orientation === 'vertical';
     const timeRaw = V ? e.clientY - rect.top : e.clientX - rect.left;
@@ -265,7 +292,7 @@ export default class App extends React.Component {
   }
 
   jumpToNow(smooth) {
-    const px = this.zoom;
+    const px = this.state.zoom;
     const V = this.state.orientation === 'vertical';
     if (V) {
       const b = this.boardRef.current;
@@ -316,57 +343,259 @@ export default class App extends React.Component {
     this.persistView({ sidebarWidth: this.state.sidebarWidth });
   }
 
-  startDrag(task, e) {
+  // ---- Shared drag/select infrastructure (content-coordinate based) ----
+
+  snap15(m) {
+    return Math.round(m / 15) * 15;
+  }
+
+  pointerToContent(clientX, clientY) {
+    const el = this.contentRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    const px = this.state.zoom;
+    const laneSize = LAYOUT.laneSize;
+    const V = this.state.orientation === 'vertical';
+    const timeRaw = V ? clientY - rect.top : clientX - rect.left;
+    const laneRaw = V ? clientX - rect.left : clientY - rect.top;
+    return { time: timeRaw / px, laneFloat: laneRaw / laneSize };
+  }
+
+  addBoardListeners() {
+    if (this._boardListening) return;
+    document.addEventListener('mousemove', this.onBoardPointerMove);
+    document.addEventListener('mouseup', this.onBoardPointerUp);
+    this._boardListening = true;
+  }
+
+  removeBoardListeners() {
+    document.removeEventListener('mousemove', this.onBoardPointerMove);
+    document.removeEventListener('mouseup', this.onBoardPointerUp);
+    this._boardListening = false;
+  }
+
+  onBoardPointerMove(e) {
+    this.dispatchMove(e.clientX, e.clientY);
+  }
+
+  dispatchMove(x, y) {
+    const s = this.state;
+    if (s.drag) this.updateSingleDrag(x, y);
+    else if (s.groupDrag) this.updateGroupDrag(x, y);
+    else if (s.resize) this.updateResize(x, y);
+    else if (s.marquee) this.updateMarquee(x, y);
+    if (s.drag || s.groupDrag || s.resize || s.marquee) this.scroller.update(x, y);
+  }
+
+  onScrollTick(x, y) {
+    const s = this.state;
+    if (s.drag) this.updateSingleDrag(x, y);
+    else if (s.groupDrag) this.updateGroupDrag(x, y);
+    else if (s.resize) this.updateResize(x, y);
+    else if (s.marquee) this.updateMarquee(x, y);
+  }
+
+  onBoardPointerUp(e) {
+    const s = this.state;
+    this.scroller.stop();
+    this.removeBoardListeners();
+    if (s.drag) this.finishSingleDrag();
+    else if (s.groupDrag) this.finishGroupDrag();
+    else if (s.resize) this.finishResize();
+    else if (s.marquee) this.finishMarquee();
+  }
+
+  // Marquee (rubber-band) selection on empty board.
+  onBoardMouseDown(e) {
+    if (e.button !== 0) return;
+    const el = this.contentRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    this.setState({
+      marquee: { cx0: cx, cy0: cy, cx1: cx, cy1: cy, startClientX: e.clientX, startClientY: e.clientY, moved: false },
+    });
+    this.addBoardListeners();
+  }
+
+  updateMarquee(x, y) {
+    const m = this.state.marquee;
+    if (!m) return;
+    const el = this.contentRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cx = x - rect.left;
+    const cy = y - rect.top;
+    const moved = m.moved || Math.abs(x - m.startClientX) > 3 || Math.abs(y - m.startClientY) > 3;
+    this.setState({ marquee: { ...m, cx1: cx, cy1: cy, moved } });
+  }
+
+  finishMarquee() {
+    const m = this.state.marquee;
+    if (!m) return;
+    if (!m.moved) {
+      this.setState({ marquee: null, selection: [] });
+      return;
+    }
+    const px = this.state.zoom;
+    const laneSize = LAYOUT.laneSize;
+    const V = this.state.orientation === 'vertical';
+    const l = Math.min(m.cx0, m.cx1);
+    const r = Math.max(m.cx0, m.cx1);
+    const t0 = Math.min(m.cy0, m.cy1);
+    const b = Math.max(m.cy0, m.cy1);
+    const sel = [];
+    this.state.tasks.forEach((tk) => {
+      const len = Math.max(tk.duration * px, 36);
+      let left, top, w, h;
+      if (V) {
+        left = tk.lane * laneSize + 8;
+        top = tk.start * px;
+        w = laneSize - 16;
+        h = len;
+      } else {
+        left = tk.start * px;
+        top = tk.lane * laneSize + 8;
+        w = len;
+        h = laneSize - 16;
+      }
+      if (l <= left && t0 <= top && r >= left + w && b >= top + h) sel.push(tk.id);
+    });
+    this.setState({ marquee: null, selection: sel });
+  }
+
+  // Card mousedown dispatcher: group-move when selected, else single drag.
+  onCardMouseDown(task, e) {
     e.stopPropagation();
     if (e.button !== 0) return;
+    if (this.state.selection.includes(task.id)) {
+      this.startGroupDrag(e);
+    } else {
+      if (this.state.selection.length) this.setState({ selection: [] });
+      this.startSingleDrag(task, e);
+    }
+  }
+
+  startSingleDrag(task, e) {
+    const p = this.pointerToContent(e.clientX, e.clientY);
+    if (!p) return;
     this.setState({
       drag: {
         id: task.id,
-        startX: e.clientX,
-        startY: e.clientY,
-        origStart: task.start,
-        origLane: task.lane,
+        grabTime: p.time - task.start,
+        grabLane: p.laneFloat - task.lane,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
         curStart: task.start,
         curLane: task.lane,
         moved: false,
       },
     });
-    document.addEventListener('mousemove', this.onDragMove);
-    document.addEventListener('mouseup', this.onDragUp);
+    this.addBoardListeners();
   }
 
-  onDragMove(e) {
+  updateSingleDrag(x, y) {
     const d = this.state.drag;
     if (!d) return;
-    const px = this.zoom;
-    const laneSize = LAYOUT.laneSize;
-    const V = this.state.orientation === 'vertical';
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;
-    const timeDelta = V ? dy : dx;
-    const laneDelta = V ? dx : dy;
-    let newStart = Math.round((d.origStart + timeDelta / px) / 15) * 15;
-    newStart = Math.max(0, Math.min(2865, newStart));
-    const newLane = Math.max(
-      0,
-      Math.min(this.state.tracks.length - 1, d.origLane + Math.round(laneDelta / laneSize)),
-    );
-    this.setState({ drag: { ...d, curStart: newStart, curLane: newLane } });
+    const p = this.pointerToContent(x, y);
+    if (!p) return;
+    const newStart = Math.max(0, Math.min(2865, this.snap15(p.time - d.grabTime)));
+    const newLane = Math.max(0, Math.min(this.state.tracks.length - 1, Math.round(p.laneFloat - d.grabLane)));
+    const moved = d.moved || Math.abs(x - d.startClientX) > 3 || Math.abs(y - d.startClientY) > 3;
+    this.setState({ drag: { ...d, curStart: newStart, curLane: newLane, moved } });
   }
 
-  onDragUp() {
+  finishSingleDrag() {
     const d = this.state.drag;
-    document.removeEventListener('mousemove', this.onDragMove);
-    document.removeEventListener('mouseup', this.onDragUp);
-    if (!d) return;
-    if (d.moved) {
+    if (d && d.moved) {
       const tasks = this.state.tasks.map((t) =>
         t.id === d.id ? { ...t, start: d.curStart, lane: d.curLane } : t,
       );
       this.persist(tasks);
     }
     this.setState({ drag: null });
+  }
+
+  startGroupDrag(e) {
+    const p = this.pointerToContent(e.clientX, e.clientY);
+    if (!p) return;
+    const sel = new Set(this.state.selection);
+    const orig = {};
+    this.state.tasks.forEach((t) => {
+      if (sel.has(t.id)) orig[t.id] = t.start;
+    });
+    this.setState({
+      groupDrag: { anchorTime: p.time, orig, delta: 0, startClientX: e.clientX, startClientY: e.clientY, moved: false },
+    });
+    this.addBoardListeners();
+  }
+
+  updateGroupDrag(x, y) {
+    const g = this.state.groupDrag;
+    if (!g) return;
+    const p = this.pointerToContent(x, y);
+    if (!p) return;
+    let delta = this.snap15(p.time - g.anchorTime);
+    const starts = Object.values(g.orig);
+    if (starts.length) {
+      const minS = Math.min(...starts);
+      const maxS = Math.max(...starts);
+      delta = Math.max(-minS, Math.min(2865 - maxS, delta));
+    }
+    const moved = g.moved || Math.abs(x - g.startClientX) > 3 || Math.abs(y - g.startClientY) > 3;
+    this.setState({ groupDrag: { ...g, delta, moved } });
+  }
+
+  finishGroupDrag() {
+    const g = this.state.groupDrag;
+    if (g && g.moved && g.delta !== 0) {
+      const sel = new Set(this.state.selection);
+      const tasks = this.state.tasks.map((t) =>
+        sel.has(t.id) && g.orig[t.id] != null
+          ? { ...t, start: Math.max(0, Math.min(2865, g.orig[t.id] + g.delta)) }
+          : t,
+      );
+      this.persist(tasks);
+    }
+    this.setState({ groupDrag: null });
+  }
+
+  startResize(task, e) {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    this.setState({
+      resize: { id: task.id, startClientX: e.clientX, startClientY: e.clientY, curDuration: task.duration, moved: false },
+    });
+    this.addBoardListeners();
+  }
+
+  updateResize(x, y) {
+    const r = this.state.resize;
+    if (!r) return;
+    const p = this.pointerToContent(x, y);
+    if (!p) return;
+    const task = this.state.tasks.find((t) => t.id === r.id);
+    if (!task) return;
+    let dur = this.snap15(p.time - task.start);
+    dur = Math.max(15, Math.min(2880 - task.start, dur));
+    const moved = r.moved || Math.abs(x - r.startClientX) > 3 || Math.abs(y - r.startClientY) > 3;
+    this.setState({ resize: { ...r, curDuration: dur, moved } });
+  }
+
+  finishResize() {
+    const r = this.state.resize;
+    if (r && r.moved) {
+      const tasks = this.state.tasks.map((t) => (t.id === r.id ? { ...t, duration: r.curDuration } : t));
+      this.persist(tasks);
+    }
+    this.setState({ resize: null });
+  }
+
+  toggleDone(task) {
+    const tasks = this.state.tasks.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t));
+    this.setState({ selection: this.state.selection.filter((id) => id !== task.id) });
+    this.persist(tasks);
   }
 
   openEdit(task) {
@@ -395,6 +624,7 @@ export default class App extends React.Component {
       lane: Number(d.lane),
       start: d.start,
       duration: Number(d.duration),
+      done: !!d.done,
       parentIds: Array.isArray(d.parentIds) ? d.parentIds : [],
     };
     const tasks = d.id ? this.state.tasks.map((x) => (x.id === d.id ? t : x)) : [...this.state.tasks, t];
@@ -412,11 +642,12 @@ export default class App extends React.Component {
   }
 
   clearAll() {
+    this.setState({ selection: [] });
     this.persist([], this.state.tracks);
   }
 
   computeVals() {
-    const px = this.zoom;
+    const px = this.state.zoom;
     const { laneSize, dateBarH, hourBarH, trackHeaderH, totalMin } = LAYOUT;
     const rulerH = dateBarH + hourBarH;
     const V = this.state.orientation === 'vertical';
@@ -426,6 +657,7 @@ export default class App extends React.Component {
     const trackAxisSize = laneCount * laneSize;
     const nowMin = this.state.nowMin;
     const barSize = V ? trackHeaderH : rulerH;
+    const selectionSet = new Set(this.state.selection);
 
     const trackDrag = this.state.trackDrag;
     const lanes = Array.from({ length: laneCount }, (_, i) => {
@@ -637,150 +869,155 @@ export default class App extends React.Component {
     });
 
     const drag = this.state.drag;
+    const groupDrag = this.state.groupDrag;
+    const resize = this.state.resize;
     const byId = {};
     tasks.forEach((t) => (byId[t.id] = t));
     const wiring = this.state.wiring;
 
     const taskViews = tasks.map((t) => {
       const isDragging = drag && drag.id === t.id;
-      const lane = isDragging ? drag.curLane : t.lane;
-      const start = isDragging ? drag.curStart : t.start;
+      const isGroupMoving = groupDrag && selectionSet.has(t.id);
+      let lane = t.lane;
+      let start = t.start;
+      let duration = t.duration;
+      if (isDragging) {
+        lane = drag.curLane;
+        start = drag.curStart;
+      } else if (isGroupMoving) {
+        start = Math.max(0, Math.min(2865, (groupDrag.orig[t.id] ?? t.start) + groupDrag.delta));
+      }
+      if (resize && resize.id === t.id) duration = resize.curDuration;
+      const selected = selectionSet.has(t.id);
+      const done = !!t.done;
       const timePx = start * px;
-      const len = Math.max(t.duration * px, 36);
+      const len = Math.max(duration * px, 36);
       const tr = this.trackFor(lane);
       const c = tr.color;
-      const end = t.start + t.duration;
+      const end = start + duration;
       let alpha;
       let urgent = false;
       const glow = '0 6px 18px rgba(0,0,0,.45)';
-      if (nowMin < t.start) {
+      if (nowMin < start) {
         alpha = 0.12;
       } else if (nowMin >= end) {
         alpha = 0.3;
       } else {
-        const prog = Math.max(0, Math.min(1, (nowMin - t.start) / t.duration));
+        const prog = Math.max(0, Math.min(1, (nowMin - start) / duration));
         alpha = 0.12 + prog * 0.45;
-        if (end - nowMin <= Math.min(15, t.duration * 0.25)) {
+        if (end - nowMin <= Math.min(15, duration * 0.25)) {
           urgent = true;
         }
       }
-      const bg = 'linear-gradient(160deg, ' + hexToRgba(c, alpha + 0.12) + ', ' + hexToRgba(c, alpha) + ')';
+      let bg = 'linear-gradient(160deg, ' + hexToRgba(c, alpha + 0.12) + ', ' + hexToRgba(c, alpha) + ')';
+      let borderColor = hexToRgba(c, Math.min(0.7, alpha + 0.22));
+      let textColor = '#f5f6fa';
+      if (done) {
+        bg = 'linear-gradient(160deg, #16171d, #0f1014)';
+        borderColor = 'rgba(255,255,255,.09)';
+        textColor = 'rgba(231,233,238,.32)';
+        urgent = false;
+      }
       const isSource = wiring && wiring.sourceId === t.id;
       const laneOff = lane * laneSize + 8;
       const laneLen = laneSize - 16;
       const rectStyle = V
         ? { left: laneOff + 'px', top: timePx + 'px', width: laneLen + 'px', height: len + 'px' }
         : { left: timePx + 'px', top: laneOff + 'px', width: len + 'px', height: laneLen + 'px' };
+      const dotBase = {
+        position: 'absolute',
+        width: '10px',
+        height: '10px',
+        borderRadius: '50%',
+        background: c,
+        border: '2px solid #101014',
+        cursor: 'crosshair',
+        zIndex: 5,
+        boxShadow: '0 0 6px ' + c,
+      };
       const dotStartStyle = V
-        ? {
-            position: 'absolute',
-            left: '50%',
-            top: '-5px',
-            transform: 'translateX(-50%)',
-            width: '10px',
-            height: '10px',
-            borderRadius: '50%',
-            background: c,
-            border: '2px solid #101014',
-            cursor: 'crosshair',
-            zIndex: 5,
-            boxShadow: '0 0 6px ' + c,
-          }
-        : {
-            position: 'absolute',
-            left: '-5px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '10px',
-            height: '10px',
-            borderRadius: '50%',
-            background: c,
-            border: '2px solid #101014',
-            cursor: 'crosshair',
-            zIndex: 5,
-            boxShadow: '0 0 6px ' + c,
-          };
+        ? { ...dotBase, left: '50%', top: '-5px', transform: 'translateX(-50%)' }
+        : { ...dotBase, left: '-5px', top: '50%', transform: 'translateY(-50%)' };
       const dotEndStyle = V
-        ? {
-            position: 'absolute',
-            left: '50%',
-            bottom: '-5px',
-            transform: 'translateX(-50%)',
-            width: '10px',
-            height: '10px',
-            borderRadius: '50%',
-            background: c,
-            border: '2px solid #101014',
-            cursor: 'crosshair',
-            zIndex: 5,
-            boxShadow: '0 0 6px ' + c,
-          }
-        : {
-            position: 'absolute',
-            right: '-5px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '10px',
-            height: '10px',
-            borderRadius: '50%',
-            background: c,
-            border: '2px solid #101014',
-            cursor: 'crosshair',
-            zIndex: 5,
-            boxShadow: '0 0 6px ' + c,
-          };
+        ? { ...dotBase, left: '50%', bottom: '-5px', transform: 'translateX(-50%)' }
+        : { ...dotBase, right: '-5px', top: '50%', transform: 'translateY(-50%)' };
+      const resizeHandleStyle = V
+        ? { position: 'absolute', left: 0, right: 0, bottom: '-3px', height: '10px', cursor: 'ns-resize', zIndex: 4 }
+        : { position: 'absolute', top: 0, bottom: 0, right: '-3px', width: '10px', cursor: 'ew-resize', zIndex: 4 };
+      let boxShadow = isSource
+        ? '0 0 0 3px ' + hexToRgba(c, 0.55) + ', 0 6px 18px rgba(0,0,0,.45)'
+        : urgent
+          ? undefined
+          : glow;
+      if (selected) boxShadow = '0 0 0 2px #22d3ee, 0 6px 18px rgba(0,0,0,.45)';
       return {
         id: t.id,
         title: t.title,
-        timeLabel: fmt(t.start, this.props.timeFormat) + ' · ' + durLabel(t.duration),
+        done,
+        timeLabel: fmt(start, this.props.timeFormat) + ' · ' + durLabel(duration),
         onClick: (e) => {
           e.stopPropagation();
         },
         onDbl: (e) => {
           e.stopPropagation();
-          this.openEdit(t);
+          this.toggleDone(t);
         },
-        onMouseDown: (e) => this.startDrag(t, e),
+        onMouseDown: (e) => this.onCardMouseDown(t, e),
         onDotStartDown: (e) => this.startWire(t.id, 'start', e),
         onDotEndDown: (e) => this.startWire(t.id, 'end', e),
+        onResizeDown: (e) => this.startResize(t, e),
         dotStartStyle,
         dotEndStyle,
+        resizeHandleStyle,
         style: {
           position: 'absolute',
           ...rectStyle,
           background: bg,
-          color: '#f5f6fa',
+          color: textColor,
           borderRadius: '11px',
           padding: V ? '11px 6px' : '6px 11px',
           boxSizing: 'border-box',
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: isDragging || isGroupMoving ? 'grabbing' : 'grab',
           overflow: 'visible',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
           gap: '1px',
-          zIndex: isDragging ? 6 : 3,
-          border: '1.5px solid ' + hexToRgba(c, Math.min(0.7, alpha + 0.22)),
-          boxShadow: isSource
-            ? '0 0 0 3px ' + hexToRgba(c, 0.55) + ', 0 6px 18px rgba(0,0,0,.45)'
-            : urgent
-              ? undefined
-              : glow,
+          textDecoration: done ? 'line-through' : 'none',
+          opacity: done ? 0.85 : 1,
+          zIndex: isDragging || isGroupMoving ? 6 : 3,
+          border: '1.5px solid ' + borderColor,
+          boxShadow,
           animation: urgent ? 'pulseUrgent 1.1s ease-in-out infinite' : undefined,
-          transition: isDragging
-            ? 'none'
-            : 'left .18s ease, top .18s ease, box-shadow .3s ease, background .3s ease',
+          transition:
+            isDragging || isGroupMoving || (resize && resize.id === t.id)
+              ? 'none'
+              : 'left .18s ease, top .18s ease, width .18s ease, height .18s ease, box-shadow .2s ease, background .3s ease',
         },
       };
     });
 
     const showDeps = this.props.showDependencies !== false;
     const connectors = [];
+    const chainLinks = [];
     if (showDeps) {
       tasks.forEach((t) => {
         (t.parentIds || []).forEach((pid) => {
           const p = byId[pid];
           if (!p) return;
+          const adjacent = p.lane === t.lane && p.start + p.duration === t.start;
+          if (adjacent) {
+            let x, y;
+            if (V) {
+              x = p.lane * laneSize + laneSize / 2;
+              y = t.start * px;
+            } else {
+              x = t.start * px;
+              y = p.lane * laneSize + laneSize / 2;
+            }
+            chainLinks.push({ id: t.id + '-' + pid, x, y });
+            return;
+          }
           let x1, y1, x2, y2;
           if (V) {
             x1 = p.lane * laneSize + laneSize / 2;
@@ -842,6 +1079,17 @@ export default class App extends React.Component {
       width: contentW + 'px',
       backgroundColor: '#101014',
     };
+
+    const m = this.state.marquee;
+    const marqueeRect =
+      m && m.moved
+        ? {
+            left: Math.min(m.cx0, m.cx1),
+            top: Math.min(m.cy0, m.cy1),
+            width: Math.abs(m.cx1 - m.cx0),
+            height: Math.abs(m.cy1 - m.cy0),
+          }
+        : null;
 
     const showNow = nowMin >= 0 && nowMin <= 1440;
     let nowStyle, nowRulerStyle;
@@ -1014,9 +1262,11 @@ export default class App extends React.Component {
       dayBandsV,
       taskViews,
       connectors,
+      chainLinks,
       wireLive,
       lanesStyle,
       gridOverlayStyle,
+      marqueeRect,
       todayLabel: baseDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }),
       svgWidthNum: contentW,
       svgHeightNum: contentH,
@@ -1035,6 +1285,7 @@ export default class App extends React.Component {
       scrollRef: this.scrollRef,
       boardRef: this.boardRef,
       onBoardDblClick: this.onBoardDblClick,
+      onBoardMouseDown: this.onBoardMouseDown,
       jumpToNow: () => this.jumpToNow(true),
       toggleOrientation: () => this.toggleOrientation(),
       toggleSidebar: () => this.toggleSidebar(),
@@ -1042,6 +1293,11 @@ export default class App extends React.Component {
       showNow,
       nowStyle,
       nowRulerStyle,
+      zoom: this.state.zoom,
+      zoomMin: ZOOM_MIN,
+      zoomMax: ZOOM_MAX,
+      zoomStep: ZOOM_STEP,
+      setZoom: (z) => this.setZoom(z),
       popupOpen: this.state.popupOpen,
       draft: d,
       isEdit: this.state.mode === 'edit',
@@ -1099,6 +1355,13 @@ export default class App extends React.Component {
     return (
       <div style={rootStyle}>
         <Header {...vals} />
+        <ZoomBar
+          zoom={vals.zoom}
+          min={vals.zoomMin}
+          max={vals.zoomMax}
+          step={vals.zoomStep}
+          onZoomChange={vals.setZoom}
+        />
         <div ref={vals.boardRef} style={boardWrapStyle}>
           <Sidebar {...vals} />
           <Timeline {...vals} />

@@ -1,5 +1,7 @@
 import React from 'react';
 import { HoverButton } from './ui.jsx';
+import ChainLink from './ChainLink.jsx';
+import SelectionBox from './SelectionBox.jsx';
 
 export default function Timeline(props) {
   const {
@@ -15,14 +17,17 @@ export default function Timeline(props) {
     nowRulerStyle,
     nowStyle,
     onBoardDblClick,
+    onBoardMouseDown,
     lanesStyle,
     laneRows,
     gridOverlayStyle,
     svgWidthNum,
     svgHeightNum,
     connectors,
+    chainLinks,
     wireLive,
     taskViews,
+    marqueeRect,
   } = props;
 
   return (
@@ -85,7 +90,7 @@ export default function Timeline(props) {
         {showNow && <div style={nowRulerStyle}>now</div>}
       </div>
 
-      <div ref={contentRef} onDoubleClick={onBoardDblClick} style={lanesStyle}>
+      <div ref={contentRef} onDoubleClick={onBoardDblClick} onMouseDown={onBoardMouseDown} style={lanesStyle}>
         {laneRows.map((row, i) => (
           <div key={i} style={row.style} />
         ))}
@@ -114,6 +119,9 @@ export default function Timeline(props) {
               strokeDasharray="6 5"
             />
           )}
+          {chainLinks.map((c) => (
+            <ChainLink key={c.id} x={c.x} y={c.y} vertical={isVertical} />
+          ))}
         </svg>
         {showNow && <div style={nowStyle} />}
         {taskViews.map(t => (
@@ -162,8 +170,10 @@ export default function Timeline(props) {
               onMouseDown={t.onDotEndDown}
               style={t.dotEndStyle}
             />
+            <div onMouseDown={t.onResizeDown} style={t.resizeHandleStyle} />
           </div>
         ))}
+        <SelectionBox rect={marqueeRect} />
       </div>
     </div>
   );

@@ -4,11 +4,12 @@ import App from './App.jsx';
 import './index.css';
 
 // Prototype configuration (previously DesignComponent props).
-//   zoom            -> pixels per minute on the time axis
+//   zoom            -> initial pixels-per-minute density; the on-screen
+//                      density slider overrides and persists this value
 //   showDependencies -> render dependency connector curves
 //   timeFormat      -> '12h' | '24h'
 const config = {
-  zoom: 2,
+  zoom: 4,
   showDependencies: true,
   timeFormat: '12h',
 };
