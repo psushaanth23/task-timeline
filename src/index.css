@@ -206,56 +206,68 @@ select,
   opacity: 1;
 }
 
-/* Track divider dot handles (#75, visibility overhauled in #87). Both sit at a
-   lane boundary inside the sticky left label gutter. The add-dot used to be a
-   near-invisible ghost (opacity .3, 11px); it is now clearly present at rest —
-   larger, mostly opaque, with a soft teal ring + glow so each inter-lane gap
-   advertises the "add divider" affordance. The delete-dot glows teal and turns
-   red on hover. The centering transform lives inline, so :hover only touches
-   color/opacity. */
-.divider-add-dot {
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(94, 234, 212, 0.7);
-  background: rgba(94, 234, 212, 0.28);
-  box-shadow: 0 0 7px rgba(94, 234, 212, 0.45);
-  opacity: 0.8;
-  cursor: pointer;
-  transition: opacity 0.12s ease, background 0.12s ease, box-shadow 0.12s ease,
-    transform 0.12s ease;
+/* Track divider handle (#75, #93): a thin GLOWING EDGE on the lane boundary
+   (replaces the old circular dot). The <button> itself is a transparent hit-zone
+   sized inline; the visible light is the ::before line. Brightness is driven by
+   the `--glow` custom property (0..1), set imperatively from cursor proximity in
+   the gutter, and forced high on direct hover — subtle at rest, bright when the
+   cursor is near. `.remove` (an existing divider) glows teal but turns red on
+   hover to signal removal. `.h` = horizontal (line runs across the gutter width);
+   `.v` = vertical (line runs down the column-boundary segment). */
+.divider-edge {
+  position: absolute;
+  display: block;
 }
-.divider-add-dot::before {
-  /* Generous invisible hit-zone around the small visual dot for easy clicking
-     without enlarging the rendered dot. */
+.divider-edge::before {
   content: '';
   position: absolute;
-  inset: -7px;
-  border-radius: 50%;
+  border-radius: 2px;
+  background: rgba(94, 234, 212, 0.95);
+  opacity: calc(0.14 + 0.82 * var(--glow, 0));
+  box-shadow: 0 0 calc(3px + 11px * var(--glow, 0)) rgba(94, 234, 212, calc(0.2 + 0.62 * var(--glow, 0)));
+  transition: opacity 0.1s ease, box-shadow 0.1s ease, background 0.1s ease;
 }
-.divider-add-dot:hover {
+.divider-edge.h::before {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+.divider-edge.v::before {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+}
+.divider-edge:hover::before {
   opacity: 1;
-  background: rgba(94, 234, 212, 0.55);
-  box-shadow: 0 0 11px rgba(94, 234, 212, 0.85);
+  box-shadow: 0 0 13px rgba(94, 234, 212, 0.9);
 }
-.divider-del-dot {
-  width: 12px;
-  height: 12px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(94, 234, 212, 0.75);
-  background: rgba(94, 234, 212, 0.5);
-  box-shadow: 0 0 8px rgba(94, 234, 212, 0.5);
-  opacity: 0.9;
-  cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+.divider-edge.remove:hover::before {
+  background: #ff6b8a;
+  box-shadow: 0 0 13px rgba(255, 107, 138, 0.9);
 }
-.divider-del-dot:hover {
-  opacity: 1;
-  background: rgba(255, 92, 124, 0.85);
-  border-color: rgba(255, 92, 124, 0.9);
-  box-shadow: 0 0 11px rgba(255, 92, 124, 0.7);
+
+/* #93: quick "boom" flash when a divider line is created (runs once on mount of
+   the new line element). Only opacity/box-shadow animate, so the inline
+   transform/gradient on the line are preserved. */
+@keyframes dividerReveal {
+  0% {
+    opacity: 0.1;
+    box-shadow: 0 0 2px rgba(94, 234, 212, 0.3);
+  }
+  45% {
+    opacity: 1;
+    box-shadow: 0 0 18px rgba(94, 234, 212, 0.95);
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.divider-line {
+  animation: dividerReveal 0.36s ease;
 }
 
 /* Task detail drawer: slides in from the right edge. */

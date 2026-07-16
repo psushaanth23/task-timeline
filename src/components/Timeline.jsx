@@ -224,22 +224,26 @@ export default function Timeline(props) {
     );
   };
 
-  // Divider dot handles (#75, #87). In horizontal mode both the add-dot (empty
-  // gap) and the remove-dot (existing divider) live in the sticky left label
-  // gutter — pinned between the track-name rectangles — so they stay visible at
-  // the left no matter how far the timeline is scrolled horizontally. In
-  // vertical mode they stay along the top edge inside the content. The glowing
-  // divider LINE always spans the lanes inside the content. Behavior unchanged:
-  // add-dot adds, remove-dot removes; both data-no-drag + stopPropagation.
-  const renderAddDot = (a) => (
+  // Divider handles (#75, #87, #93). The handle is now a thin GLOWING EDGE on the
+  // lane boundary instead of a circle. Horizontal: both the add-edge (empty gap)
+  // and the remove-edge (existing divider) live in the sticky left label gutter,
+  // pinned between the track-name rectangles so they stay at the left on
+  // horizontal scroll. Vertical: a short segment at the top of the column
+  // boundary. The full-length glowing divider LINE spans the lanes inside the
+  // content. Behavior unchanged: add-edge adds, remove-edge removes; both
+  // data-no-drag + stopPropagation. `data-cross` lets onGutterMove scale the
+  // glow by cursor proximity (horizontal).
+  const orientCls = isVertical ? 'v' : 'h';
+  const renderAddEdge = (a) => (
     <button
       key={'add' + a.key}
       type="button"
-      className="divider-add-dot"
+      className={'divider-edge ' + orientCls}
       data-no-drag="true"
+      data-cross={a.cross}
       title="Add divider"
       aria-label="Add track divider"
-      style={a.dotStyle}
+      style={a.edgeStyle}
       onMouseDown={(e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -248,15 +252,16 @@ export default function Timeline(props) {
       onClick={a.onAdd}
     />
   );
-  const renderDelDot = (d) => (
+  const renderDelEdge = (d) => (
     <button
       key={'del' + d.id}
       type="button"
-      className="divider-del-dot"
+      className={'divider-edge remove ' + orientCls}
       data-no-drag="true"
+      data-cross={d.cross}
       title="Remove divider"
       aria-label="Remove track divider"
-      style={d.dotStyle}
+      style={d.edgeStyle}
       onMouseDown={(e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -265,6 +270,22 @@ export default function Timeline(props) {
       onClick={d.onRemove}
     />
   );
+
+  // Proximity glow (horizontal gutter, #93): as the cursor nears a boundary its
+  // edge brightens. Done imperatively (set the `--glow` CSS var on each edge)
+  // to avoid re-rendering the whole timeline on every mousemove.
+  const onGutterMove = (e) => {
+    const el = e.currentTarget;
+    const y = e.clientY - el.getBoundingClientRect().top;
+    el.querySelectorAll('.divider-edge').forEach((edge) => {
+      const cross = parseFloat(edge.getAttribute('data-cross')) || 0;
+      const g = Math.max(0, 1 - Math.abs(y - cross) / 55);
+      edge.style.setProperty('--glow', g.toFixed(3));
+    });
+  };
+  const onGutterLeave = (e) => {
+    e.currentTarget.querySelectorAll('.divider-edge').forEach((edge) => edge.style.setProperty('--glow', '0'));
+  };
 
   // #87: one track label pinned in the left gutter, aligned to its lane row.
   // Reuses the sidebar row UI (color accent, inline-rename name, compact tags,
@@ -614,13 +635,13 @@ export default function Timeline(props) {
       {notVertical ? (
         <div style={bodyOuterStyle}>
           {labelGutterW > 0 && (
-            <div style={labelGutterStyle}>
+            <div style={labelGutterStyle} onMouseMove={onGutterMove} onMouseLeave={onGutterLeave}>
               {lanes.map((lane) => renderLaneLabel(lane))}
-              {/* Divider handles live in the sticky gutter, between the name
-                  rectangles, so they stay visible at the left on horizontal
-                  scroll and sit above the label rows (#87). */}
-              {dividerAdds.map((a) => renderAddDot(a))}
-              {dividers.map((d) => renderDelDot(d))}
+              {/* Divider edges live in the sticky gutter, on the boundaries
+                  between the name rectangles, so they stay visible at the left on
+                  horizontal scroll and sit above the label rows (#87/#93). */}
+              {dividerAdds.map((a) => renderAddEdge(a))}
+              {dividers.map((d) => renderDelEdge(d))}
               <div onMouseDown={onSidebarResizeDown} style={resizeHandleStyle} />
             </div>
           )}
@@ -630,9 +651,10 @@ export default function Timeline(props) {
             ))}
             <div style={gridOverlayStyle} />
             {/* Track divider LINES (#75): decorative glowing separators
-                (pointer-events:none). The dot handles live in the gutter. */}
+                (pointer-events:none). The edge handles live in the gutter. The
+                divider-line class flashes on mount for #93 add feedback. */}
             {dividers.map((d) => (
-              <div key={d.id} style={d.lineStyle} />
+              <div key={d.id} className="divider-line" style={d.lineStyle} />
             ))}
             {renderContentInner()}
           </div>
@@ -643,12 +665,12 @@ export default function Timeline(props) {
             <div key={i} style={row.style} />
           ))}
           <div style={gridOverlayStyle} />
-          {/* Vertical mode: divider dots sit along the top edge inside content. */}
-          {dividerAdds.map((a) => renderAddDot(a))}
+          {/* Vertical mode: divider edges sit along the top edge inside content. */}
+          {dividerAdds.map((a) => renderAddEdge(a))}
           {dividers.map((d) => (
             <React.Fragment key={d.id}>
-              <div style={d.lineStyle} />
-              {renderDelDot(d)}
+              <div className="divider-line" style={d.lineStyle} />
+              {renderDelEdge(d)}
             </React.Fragment>
           ))}
           {renderContentInner()}

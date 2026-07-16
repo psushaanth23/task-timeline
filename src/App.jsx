@@ -1756,19 +1756,40 @@ export default class App extends React.Component {
             background: 'linear-gradient(90deg, rgba(94,234,212,.5), rgba(94,234,212,.24))',
             boxShadow: '0 0 8px rgba(94,234,212,.35)',
           };
-    // #87: horizontal divider dots live in the sticky label gutter (near its
-    // trailing edge, centered on the lane boundary) with a high z so nothing
-    // covers them and they stay stuck at the left on horizontal scroll; vertical
-    // keeps them along the top edge inside the content.
-    const dividerDotStyle = (cross) =>
+    // #93: the divider handle is a thin GLOWING EDGE segment sitting on the lane
+    // boundary (replacing the old circular dot). Horizontal: it lives in the
+    // sticky label gutter (spanning most of its width), pinned left so it stays
+    // put on horizontal scroll, with a comfortable invisible hit-zone. Vertical:
+    // a short vertical segment at the top of the column boundary. The visible
+    // light + proximity/hover brightening are done in CSS (.divider-edge); `cross`
+    // is exposed so the gutter can scale each edge's glow by cursor distance.
+    const dividerEdgeStyle = (cross) =>
       V
-        ? { position: 'absolute', left: cross + 'px', top: '7px', transform: 'translate(-50%, 0)', zIndex: 5 }
+        ? {
+            position: 'absolute',
+            left: cross + 'px',
+            top: '3px',
+            width: '18px',
+            height: '30px',
+            transform: 'translateX(-50%)',
+            zIndex: 6,
+            padding: 0,
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+          }
         : {
             position: 'absolute',
             top: cross + 'px',
-            left: Math.max(6, gutterW - 17) + 'px',
-            transform: 'translate(0, -50%)',
+            left: '6px',
+            width: Math.max(10, gutterW - 12) + 'px',
+            height: '16px',
+            transform: 'translateY(-50%)',
             zIndex: 40,
+            padding: 0,
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
           };
 
     const usedBoundaries = new Set();
@@ -1780,8 +1801,9 @@ export default class App extends React.Component {
       const cross = (idx + 1) * laneSize;
       dividers.push({
         id: d.id,
+        cross,
         lineStyle: dividerLineStyle(cross),
-        dotStyle: dividerDotStyle(cross),
+        edgeStyle: dividerEdgeStyle(cross),
         onRemove: (e) => {
           e.stopPropagation();
           this.removeDivider(d.id);
@@ -1793,9 +1815,11 @@ export default class App extends React.Component {
     for (let i = 0; i < laneCount - 1; i++) {
       if (usedBoundaries.has(i)) continue;
       const afterTrackId = this.trackFor(i).id;
+      const cross = (i + 1) * laneSize;
       dividerAdds.push({
         key: 'add' + i,
-        dotStyle: dividerDotStyle((i + 1) * laneSize),
+        cross,
+        edgeStyle: dividerEdgeStyle(cross),
         onAdd: (e) => {
           e.stopPropagation();
           this.addDivider(afterTrackId);
