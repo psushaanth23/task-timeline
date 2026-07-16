@@ -2425,6 +2425,7 @@ export default class App extends React.Component {
             trackColor: tr.color || '#8891a5',
             start: t.start,
             startLabel: fmt(t.start, this.props.timeFormat),
+            durationLabel: durLabel(t.duration),
             timeLabel:
               fmt(t.start, this.props.timeFormat) +
               ' – ' +

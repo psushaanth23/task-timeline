@@ -7,52 +7,57 @@ import TagChip from './TagChip.jsx';
 // Presented as two vertical timelines: In progress first, then Completed —
 // each newest-first. A tag rail across the top switches the active tag.
 
-function TimelineItem({ row, last }) {
+// Timeline rail geometry. Rows are a fixed height so a single spine can run from
+// the first node's center to the last node's center with the dots overlaying it
+// (see Section): node center sits at ROW_MIN_H/2 from each row's top, so the
+// spine's symmetric top/bottom inset = ROW_MIN_H/2 lands exactly on end nodes.
+const RAIL_W = 116;
+const NODE_COL = 26;
+const ROW_MIN_H = 72;
+const SPINE_X = RAIL_W + NODE_COL / 2;
+const SPINE_INSET = ROW_MIN_H / 2;
+
+function TimelineItem({ row }) {
   const done = row.done;
-  const marker = done ? (row.completedLabel || 'completed') : row.startLabel;
+  // Time now lives on the rail (axis label), not on the card: in-progress shows
+  // its start time; completed shows the finish date+time (graceful fallback).
+  const marker = done ? row.completedLabel || 'completed' : row.startLabel || '';
   const accent = row.trackColor;
   return (
-    <div style={{ position: 'relative', display: 'flex', gap: '16px', paddingBottom: last ? 0 : '16px' }}>
-      {/* Spine + node marker */}
-      <div style={{ position: 'relative', flex: 'none', width: '14px', display: 'flex', justifyContent: 'center' }}>
-        {!last && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '14px',
-              bottom: '-2px',
-              width: '2px',
-              background: 'linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.05))',
-            }}
-          />
-        )}
+    <div style={{ display: 'flex', alignItems: 'center', minHeight: ROW_MIN_H + 'px' }}>
+      {/* Rail time label — the timeline axis label to the LEFT of the spine. */}
+      <div
+        style={{
+          width: RAIL_W + 'px',
+          flex: 'none',
+          textAlign: 'right',
+          paddingRight: '12px',
+          fontSize: '11px',
+          lineHeight: 1.35,
+          fontFamily: "'JetBrains Mono',monospace",
+          color: done ? 'rgba(231,233,238,.5)' : hexToRgba(accent, 0.95),
+        }}
+        title={marker}
+      >
+        {marker}
+      </div>
+      {/* Node cell: the dot overlays the continuous spine that lives in Section. */}
+      <div style={{ width: NODE_COL + 'px', flex: 'none', display: 'flex', justifyContent: 'center' }}>
         <div
           style={{
             position: 'relative',
             zIndex: 1,
-            marginTop: '4px',
             width: '12px',
             height: '12px',
             borderRadius: '50%',
-            background: done ? 'rgba(18,20,28,0.9)' : accent,
+            background: done ? 'rgba(18,20,28,0.95)' : accent,
             border: '2px solid ' + accent,
             boxShadow: done ? 'none' : '0 0 9px ' + hexToRgba(accent, 0.6),
           }}
         />
       </div>
-
-      {/* Card */}
-      <div style={{ flex: '1 1 auto', minWidth: 0, paddingBottom: '2px' }}>
-        <div
-          style={{
-            fontSize: '11px',
-            color: done ? 'rgba(231,233,238,.45)' : hexToRgba(accent, 0.95),
-            fontFamily: "'JetBrains Mono',monospace",
-            marginBottom: '4px',
-          }}
-        >
-          {done ? 'Completed · ' + marker : marker}
-        </div>
+      {/* Card (no timestamp): title, duration, done badge, has-notes, track chip. */}
+      <div style={{ flex: '1 1 auto', minWidth: 0 }}>
         <div
           style={{
             position: 'relative',
@@ -96,7 +101,7 @@ function TimelineItem({ row, last }) {
               {row.title || 'Untitled task'}
             </div>
             <div style={{ marginTop: '4px', fontSize: '12px', color: 'rgba(231,233,238,.55)', fontFamily: "'JetBrains Mono',monospace" }}>
-              {row.timeLabel}
+              {row.durationLabel}
             </div>
           </div>
           <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -167,9 +172,23 @@ function Section({ title, count, rows }) {
         {title}
         <span style={{ color: 'rgba(231,233,238,.35)' }}>({count})</span>
       </div>
-      {rows.map((r, i) => (
-        <TimelineItem key={r.id} row={r} last={i === rows.length - 1} />
-      ))}
+      {/* One continuous spine down the whole section; dots overlay it (no gaps). */}
+      <div style={{ position: 'relative' }}>
+        <div
+          style={{
+            position: 'absolute',
+            left: SPINE_X - 1 + 'px',
+            top: SPINE_INSET + 'px',
+            bottom: SPINE_INSET + 'px',
+            width: '2px',
+            background: 'rgba(255,255,255,.16)',
+            borderRadius: '1px',
+          }}
+        />
+        {rows.map((r) => (
+          <TimelineItem key={r.id} row={r} />
+        ))}
+      </div>
     </div>
   );
 }
