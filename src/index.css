@@ -194,6 +194,18 @@ select,
   display: none;
 }
 
+/* #89: per-track "pull next missed task to now" button. Unobtrusive — hidden at
+   rest, revealed only when the row is hovered AND the track actually has a
+   pull-able missed task (.is-active). Tracks with nothing to pull never show it,
+   keeping the label clean. */
+.lane-pull-btn {
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.track-row:hover .lane-pull-btn.is-active {
+  opacity: 1;
+}
+
 /* Track divider dot handles (#75, visibility overhauled in #87). Both sit at a
    lane boundary inside the sticky left label gutter. The add-dot used to be a
    near-invisible ghost (opacity .3, 11px); it is now clearly present at rest —

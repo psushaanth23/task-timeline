@@ -1428,6 +1428,33 @@ export default class App extends React.Component {
     this.persist(tasks);
   }
 
+  // #89: id of the EARLIEST "missed" task in a lane, or null. A task is missed
+  // when it's not done and its END (start + duration) is fully before `now`
+  // (expressed as a minute offset from the absolute origin). Used both to pick
+  // the task to pull and to enable/disable the per-lane pull button.
+  earliestMissedTaskId(laneIndex, nowMinutes) {
+    let best = null;
+    for (const t of this.state.tasks) {
+      if (t.lane !== laneIndex || t.done) continue;
+      if (t.start + t.duration >= nowMinutes) continue; // not fully elapsed
+      if (best === null || t.start < best.start) best = t;
+    }
+    return best ? best.id : null;
+  }
+
+  // #89: pull the earliest missed task in a lane forward so its START lands on
+  // the next 10-minute boundary at/after now (CEIL, e.g. 8:56 -> 9:00), keeping
+  // its duration. Absolute-origin model: `now` and the task times are all minute
+  // offsets from originMs. Overlap is allowed. Undoable + persisted via persist().
+  pullMissedTask(laneIndex) {
+    const now = minutesSince(this.state.originMs);
+    const id = this.earliestMissedTaskId(laneIndex, now);
+    if (id == null) return;
+    const newStart = Math.max(0, Math.min(MAX_START, Math.ceil(now / SNAP_MIN) * SNAP_MIN));
+    const tasks = this.state.tasks.map((t) => (t.id === id ? { ...t, start: newStart } : t));
+    this.persist(tasks);
+  }
+
   // Detail-panel notes: goes through persist() so it saves to disk+localStorage
   // and is undoable, exactly like any other task edit.
   setTaskNotes(id, notes) {
@@ -1516,6 +1543,8 @@ export default class App extends React.Component {
         name: tr.name,
         editing: this.state.editingTrack === i,
         tagList: (tr.tagIds || []).map((id) => tagsById[id]).filter(Boolean),
+        // #89: whether this lane has a pull-able missed task (enables the button).
+        hasMissed: this.earliestMissedTaskId(i, nowMin) != null,
         rowStyle: {
           height: laneSize + 'px',
           display: 'flex',
@@ -2452,6 +2481,7 @@ export default class App extends React.Component {
       bodyOuterStyle,
       labelGutterW: gutterW,
       labelsHidden,
+      onPullMissed: (i) => this.pullMissedTask(i),
       contentRef: this.contentRef,
       scrollRef: this.scrollRef,
       // Wrapper for the timeline's scroll pane. In HORIZONTAL mode the time axis

@@ -50,6 +50,7 @@ export default function Timeline(props) {
     addTrack,
     onSidebarResizeDown,
     resizeHandleStyle,
+    onPullMissed,
   } = props;
 
   // Ref to the currently-editing title element; cancelRef distinguishes an
@@ -293,12 +294,44 @@ export default function Timeline(props) {
         />
         <TrackTags tags={lane.tagList} onAdd={lane.onAddTag} onOpenTag={lane.onOpenTag} />
       </div>
+      {/* #89: pull the earliest missed (overdue, not-done) task in this track to
+          the next 10-min slot at/after now. Revealed on row hover; dimmed +
+          non-interactive when the track has no eligible task. */}
+      <HoverButton
+        onClick={(e) => {
+          e.stopPropagation();
+          if (lane.hasMissed && onPullMissed) onPullMissed(lane.index);
+        }}
+        title={lane.hasMissed ? 'Pull next missed task to now' : 'No missed tasks to pull'}
+        aria-label="Pull next missed task to now"
+        aria-disabled={!lane.hasMissed}
+        data-no-drag="true"
+        className={lane.hasMissed ? 'lane-pull-btn is-active' : 'lane-pull-btn'}
+        style={{
+          marginLeft: 'auto',
+          flex: 'none',
+          background: 'none',
+          border: 'none',
+          color: lane.hasMissed ? 'rgba(94,234,212,.8)' : 'rgba(231,233,238,.14)',
+          fontSize: '13px',
+          cursor: lane.hasMissed ? 'pointer' : 'default',
+          padding: '2px 3px',
+          lineHeight: 1,
+          display: 'inline-flex',
+          alignItems: 'center',
+        }}
+        hoverStyle={lane.hasMissed ? { color: '#5eead4' } : {}}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polygon points="13 19 22 12 13 5 13 19" />
+          <polygon points="2 19 11 12 2 5 2 19" />
+        </svg>
+      </HoverButton>
       <HoverButton
         onClick={lane.onDelete}
         title="Delete track"
         data-no-drag="true"
         style={{
-          marginLeft: 'auto',
           flex: 'none',
           background: 'none',
           border: 'none',
