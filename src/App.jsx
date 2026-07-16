@@ -2125,6 +2125,18 @@ export default class App extends React.Component {
         hasNotes: !!(t.notes && t.notes.trim()),
         editing: this.state.editingId === t.id,
         timeLabel: fmt(start, this.props.timeFormat) + ' · ' + durLabel(duration),
+        // #92: data for the custom glass hover-card (full name + time range +
+        // track name/color + tags). rangeLabel is a full start–end range plus
+        // duration, richer than the compact on-card timeLabel.
+        rangeLabel:
+          fmt(start, this.props.timeFormat) +
+          ' – ' +
+          fmt(end, this.props.timeFormat) +
+          ' · ' +
+          durLabel(duration),
+        trackName: tr.name,
+        trackColor: c,
+        tags: (tr.tagIds || []).map((id) => tagsById[id]).filter(Boolean),
         onClick: (e) => {
           e.stopPropagation();
           // Ignore the click the browser synthesizes at the end of a drag.

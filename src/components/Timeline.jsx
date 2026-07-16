@@ -1,9 +1,101 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { HoverButton } from './ui.jsx';
 import ChainLink from './ChainLink.jsx';
 import SelectionBox from './SelectionBox.jsx';
 import TrackName from './TrackName.jsx';
 import TrackTags from './TrackTags.jsx';
+
+// #92: custom glass hover-card that replaces the native `title` tooltip on
+// timeline task cards. Rendered in a body portal, positioned near the hovered
+// card and clamped/flipped to stay on-screen. Shows the full task name, the
+// time range + duration, the track (with its color accent) and any tags.
+export function TaskHoverCard({ data, anchor }) {
+  if (!data || !anchor) return null;
+  const MARGIN = 10;
+  const CARD_W = 260;
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+  // Prefer below-right of the card; flip above / clamp horizontally near edges.
+  let left = anchor.left;
+  if (left + CARD_W + MARGIN > vw) left = Math.max(MARGIN, vw - CARD_W - MARGIN);
+  const below = anchor.bottom + MARGIN;
+  const flipAbove = below + 120 > vh && anchor.top - MARGIN > 120;
+  const style = {
+    position: 'fixed',
+    left: Math.round(left) + 'px',
+    top: flipAbove ? undefined : Math.round(below) + 'px',
+    bottom: flipAbove ? Math.round(vh - anchor.top + MARGIN) + 'px' : undefined,
+    width: CARD_W + 'px',
+    maxWidth: '90vw',
+    zIndex: 9000,
+    pointerEvents: 'none',
+    padding: '11px 13px',
+    borderRadius: '12px',
+    background: 'rgba(14,18,26,.82)',
+    backdropFilter: 'blur(14px) saturate(140%)',
+    WebkitBackdropFilter: 'blur(14px) saturate(140%)',
+    border: '1px solid rgba(120,200,220,.22)',
+    boxShadow: '0 12px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08)',
+    color: '#eef0f4',
+    fontFamily: "'JetBrains Mono',ui-monospace,monospace",
+  };
+  const card = (
+    <div className="task-hover-card" style={style} data-testid="task-hover-card">
+      <div
+        style={{
+          fontSize: '13px',
+          fontWeight: 600,
+          lineHeight: 1.35,
+          marginBottom: '5px',
+          wordBreak: 'break-word',
+        }}
+      >
+        {data.title || 'Untitled task'}
+      </div>
+      <div style={{ fontSize: '11px', color: 'rgba(231,233,238,.7)', marginBottom: '7px' }}>
+        {data.rangeLabel || data.timeLabel}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
+        <span
+          style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: data.trackColor || '#5eead4',
+            boxShadow: '0 0 6px ' + (data.trackColor || '#5eead4'),
+            flex: 'none',
+          }}
+        />
+        <span style={{ color: 'rgba(231,233,238,.85)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {data.trackName || 'Track'}
+        </span>
+      </div>
+      {data.tags && data.tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '8px' }}>
+          {data.tags.map((tag) => (
+            <span
+              key={tag.id}
+              style={{
+                fontSize: '10px',
+                padding: '2px 7px',
+                borderRadius: '999px',
+                background: (tag.color || '#5eead4') + '22',
+                border: '1px solid ' + (tag.color || '#5eead4') + '55',
+                color: '#eef0f4',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {tag.label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+  if (typeof document === 'undefined' || !document.body) return card;
+  return createPortal(card, document.body);
+}
 
 export default function Timeline(props) {
   const {
@@ -60,6 +152,17 @@ export default function Timeline(props) {
   // Which dependency connector line the pointer is hovering (for click-to-delete
   // highlight). Cleared on leave.
   const [hoverConn, setHoverConn] = React.useState(null);
+  // #92: hovered task card { id, anchor } for the custom glass hover-card and
+  // the narrow-card peek-expand. anchor is the card's viewport rect.
+  const [hoverCard, setHoverCard] = React.useState(null);
+  const onCardEnter = (t) => (e) => {
+    if (t.editing) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    setHoverCard({ id: t.id, anchor: { left: r.left, top: r.top, bottom: r.bottom, right: r.right } });
+  };
+  const onCardLeave = (t) => () => {
+    setHoverCard((h) => (h && h.id === t.id ? null : h));
+  };
 
   React.useEffect(() => {
     if (!editingId) return;
@@ -428,14 +531,23 @@ export default function Timeline(props) {
       {/* Vertical mode: the "now" label lives in the scrolling content (same
           coords as the line + tasks). Horizontal puts it in the top ruler. */}
       {showNow && isVertical && <div style={nowRulerStyle}>{renderNowLabel()}</div>}
-      {taskViews.map((t) => (
+      {taskViews.map((t) => {
+        // #92: peek — a hovered narrow card gently expands to reveal its full
+        // name in place (smooth via CSS transition; collapses on mouse-out).
+        const peeking = !t.editing && t.narrow && hoverCard && hoverCard.id === t.id;
+        const cardStyle = peeking
+          ? { ...t.style, minWidth: '170px', width: 'auto', overflow: 'visible', zIndex: 12 }
+          : t.style;
+        return (
         <div
           key={t.id}
           className="task-card"
-          style={t.style}
-          /* #84: full task name is ALWAYS the native tooltip on hover (not gated
-             on truncation/zoom); suppressed only while inline-renaming. */
-          title={t.editing ? undefined : t.title}
+          style={cardStyle}
+          /* #92: native `title` removed — the custom glass hover-card is the
+             visible affordance. aria-label keeps the name accessible. */
+          aria-label={t.title}
+          onMouseEnter={onCardEnter(t)}
+          onMouseLeave={onCardLeave(t)}
           onMouseDown={t.onMouseDown}
           onClick={t.onClick}
           onDoubleClick={t.onDbl}
@@ -445,7 +557,6 @@ export default function Timeline(props) {
             ref={t.editing ? editRef : null}
             contentEditable={t.editing}
             suppressContentEditableWarning
-            title={t.editing ? undefined : t.title}
             onMouseDown={t.editing ? (e) => e.stopPropagation() : undefined}
             onClick={t.editing ? (e) => e.stopPropagation() : undefined}
             onDoubleClick={t.editing ? (e) => e.stopPropagation() : undefined}
@@ -454,12 +565,14 @@ export default function Timeline(props) {
             style={
               t.editing
                 ? { ...titleBaseStyle, ...titleEditingStyle }
-                : t.narrow
+                : t.narrow && !peeking
                   ? { ...titleBaseStyle, display: 'none' }
-                  : { ...titleBaseStyle, WebkitLineClamp: t.titleLines }
+                  : t.narrow && peeking
+                    ? { ...titleBaseStyle, whiteSpace: 'nowrap', overflow: 'visible' }
+                    : { ...titleBaseStyle, WebkitLineClamp: t.titleLines }
             }
           >
-            {t.editing || t.narrow ? null : t.title}
+            {t.editing || (t.narrow && !peeking) ? null : t.title}
           </div>
           {!t.narrow && (
             <div
@@ -476,8 +589,8 @@ export default function Timeline(props) {
               {t.timeLabel}
             </div>
           )}
-          {t.narrow && !t.editing && (
-            <div title={t.title} data-no-drag="true" onMouseDown={(e) => e.stopPropagation()} style={t.externalLabelStyle}>
+          {t.narrow && !t.editing && !peeking && (
+            <div data-no-drag="true" onMouseDown={(e) => e.stopPropagation()} style={t.externalLabelStyle}>
               {t.title}
             </div>
           )}
@@ -502,8 +615,14 @@ export default function Timeline(props) {
           </button>
           {renderHud(t.hud)}
         </div>
-      ))}
+        );
+      })}
       <SelectionBox rect={marqueeRect} />
+      {hoverCard &&
+        (() => {
+          const ht = taskViews.find((t) => t.id === hoverCard.id);
+          return ht && !ht.editing ? <TaskHoverCard data={ht} anchor={hoverCard.anchor} /> : null;
+        })()}
     </>
   );
 

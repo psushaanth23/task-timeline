@@ -143,6 +143,13 @@ select,
   }
 }
 
+/* #92: peek — smoothly animate a narrow card's min-width when it hover-expands
+   to reveal its full name. Scoped to min-width (only changes on peek) so zoom /
+   drag / resize width changes never animate. */
+.task-card {
+  transition: min-width 0.14s ease;
+}
+
 /* On-card notes icon (#71): opens the Markdown detail panel. Subtle by default,
    brightens on card/self hover. Sits in the card's top-right corner. */
 .task-note-btn {
