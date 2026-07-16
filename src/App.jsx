@@ -6,6 +6,7 @@ import { PALETTE, LAYOUT, genTrackId, genTagId, makeTracks, seedTasks } from './
 import TagPicker from './components/TagPicker.jsx';
 import ArchivePage from './components/ArchivePage.jsx';
 import TagManagerPage from './components/TagManagerPage.jsx';
+import DetailPanel from './components/DetailPanel.jsx';
 import { fmt, fmtHour, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
@@ -75,6 +76,8 @@ export default class App extends React.Component {
       route: App.routeFromHash(),
       wiring: null,
       pendingConnect: null,
+      // Id of the task whose detail panel (Markdown notes) is open, or null.
+      panelTaskId: null,
       orientation: 'horizontal',
       sidebarWidth: 150,
       sidebarCollapsed: false,
@@ -186,7 +189,9 @@ export default class App extends React.Component {
     return rawTasks.map((t) => {
       const parentIds = Array.isArray(t.parentIds) ? t.parentIds : t.parentId ? [t.parentId] : [];
       const start = typeof t.startMs === 'number' ? Math.round((t.startMs - originMs) / MS_PER_MIN) : t.start;
-      const out = { ...t, start, done: !!t.done, parentIds };
+      // Migration: tasks saved before the notes feature default to "".
+      const notes = typeof t.notes === 'string' ? t.notes : '';
+      const out = { ...t, start, done: !!t.done, parentIds, notes };
       delete out.startMs;
       return out;
     });
@@ -429,6 +434,7 @@ export default class App extends React.Component {
         duration: t.duration,
         done: !!t.done,
         parentIds: [...(t.parentIds || [])],
+        notes: t.notes || '',
       }));
     return true;
   }
@@ -448,6 +454,7 @@ export default class App extends React.Component {
       duration: c.duration,
       done: !!c.done,
       parentIds: [...(c.parentIds || [])],
+      notes: c.notes || '',
     }));
     this.setState({ selection: copies.map((c) => c.id) });
     this.persist([...this.state.tasks, ...copies]);
@@ -486,9 +493,13 @@ export default class App extends React.Component {
       return;
     }
     if (e.key === 'Escape') {
-      // Escape cancels a pending two-click connection.
+      // Escape cancels a pending two-click connection first, else closes the
+      // open task detail panel.
       if (this.state.pendingConnect) {
         this.cancelPendingConnect();
+        e.preventDefault();
+      } else if (this.state.panelTaskId) {
+        this.closePanel();
         e.preventDefault();
       }
       return;
@@ -963,6 +974,7 @@ export default class App extends React.Component {
       duration: 30,
       done: false,
       parentIds: [],
+      notes: '',
     };
     this.persist([...this.state.tasks, task]);
     // Immediately enter inline rename on the fresh task; Timeline's effect
@@ -1140,7 +1152,8 @@ export default class App extends React.Component {
     const m = this.state.marquee;
     if (!m) return;
     if (!m.moved) {
-      this.setState({ marquee: null, selection: [] });
+      // A clean click on empty space clears selection and closes the panel.
+      this.setState({ marquee: null, selection: [], panelTaskId: null });
       return;
     }
     const px = this.timeDensity();
@@ -1167,7 +1180,8 @@ export default class App extends React.Component {
       }
       if (l <= left && t0 <= top && r >= left + w && b >= top + h) sel.push(tk.id);
     });
-    this.setState({ marquee: null, selection: sel });
+    // A marquee (multi-)selection isn't a single-task focus, so close the panel.
+    this.setState({ marquee: null, selection: sel, panelTaskId: null });
   }
 
   // Card mousedown dispatcher: group-move when selected, else single drag.
@@ -1315,6 +1329,19 @@ export default class App extends React.Component {
     const tasks = this.state.tasks.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t));
     this.setState({ selection: this.state.selection.filter((id) => id !== task.id) });
     this.persist(tasks);
+  }
+
+  // Detail-panel notes: goes through persist() so it saves to disk+localStorage
+  // and is undoable, exactly like any other task edit.
+  setTaskNotes(id, notes) {
+    const cur = this.state.tasks.find((t) => t.id === id);
+    if (!cur || (cur.notes || '') === (notes || '')) return;
+    const tasks = this.state.tasks.map((t) => (t.id === id ? { ...t, notes } : t));
+    this.persist(tasks);
+  }
+
+  closePanel() {
+    if (this.state.panelTaskId) this.setState({ panelTaskId: null });
   }
 
   // Inline title editing (replaces the old modal).
@@ -1800,7 +1827,9 @@ export default class App extends React.Component {
           // schedules inline title editing; a third click within the window is
           // a triple-click, so cancel the edit and toggle done/blackout.
           if (e.detail === 1) {
-            this.setState({ selection: [t.id] });
+            // Single clean click selects the task AND opens its detail panel
+            // (switching the panel if another task's was open).
+            this.setState({ selection: [t.id], panelTaskId: t.id });
           } else if (e.detail === 2) {
             clearTimeout(this._clickTimer);
             this._clickTimer = setTimeout(() => this.startInlineEdit(t), 260);
@@ -2216,12 +2245,28 @@ export default class App extends React.Component {
     };
     const tp = this.state.tagPicker;
     const pickerTrack = tp ? this.state.tracks[tp.trackIndex] : null;
+    const panelTask = this.state.panelTaskId
+      ? this.state.tasks.find((t) => t.id === this.state.panelTaskId)
+      : null;
+    const panelTimeLabel = panelTask
+      ? fmt(panelTask.start, this.props.timeFormat) + ' · ' + durLabel(panelTask.duration)
+      : '';
     return (
       <div style={rootStyle}>
         <Header {...vals} />
-        <div ref={vals.boardRef} style={boardWrapStyle}>
-          <Sidebar {...vals} />
-          <Timeline {...vals} />
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
+          <div ref={vals.boardRef} style={boardWrapStyle}>
+            <Sidebar {...vals} />
+            <Timeline {...vals} />
+          </div>
+          {panelTask && (
+            <DetailPanel
+              task={panelTask}
+              timeLabel={panelTimeLabel}
+              onClose={() => this.closePanel()}
+              onSaveNotes={(notes) => this.setTaskNotes(panelTask.id, notes)}
+            />
+          )}
         </div>
         {tp && pickerTrack && (
           <TagPicker

@@ -142,3 +142,131 @@ select,
     opacity: 0.25;
   }
 }
+
+/* Task detail drawer: slides in from the right edge. */
+@keyframes panelSlideIn {
+  from {
+    transform: translateX(18px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+/* Content inside the detail panel should be selectable (URLs, notes) even
+   though the board suppresses selection globally. */
+.detail-panel {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Rendered Markdown in the notes panel, tuned for the dark glass theme. */
+.md-body {
+  color: #dfe3ea;
+  font-size: 13px;
+  line-height: 1.65;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.md-body > *:first-child {
+  margin-top: 0;
+}
+.md-body > *:last-child {
+  margin-bottom: 0;
+}
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  color: #f0f2f6;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 16px 0 8px;
+}
+.md-body h1 {
+  font-size: 18px;
+}
+.md-body h2 {
+  font-size: 16px;
+}
+.md-body h3 {
+  font-size: 14px;
+}
+.md-body p {
+  margin: 8px 0;
+}
+.md-body a {
+  color: #5eead4;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md-body a:hover {
+  color: #99f6e4;
+}
+.md-body ul,
+.md-body ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+.md-body li {
+  margin: 3px 0;
+}
+.md-body code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.md-body pre {
+  background: rgba(6, 9, 14, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+.md-body pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.md-body blockquote {
+  margin: 10px 0;
+  padding: 2px 12px;
+  border-left: 3px solid rgba(120, 200, 220, 0.5);
+  color: rgba(231, 233, 238, 0.75);
+}
+.md-body table {
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 12px;
+  display: block;
+  overflow-x: auto;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 5px 9px;
+  text-align: left;
+}
+.md-body th {
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: 700;
+}
+.md-body hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin: 14px 0;
+}
+.md-body img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+.md-body input[type='checkbox'] {
+  margin-right: 6px;
+}
