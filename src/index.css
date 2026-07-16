@@ -171,6 +171,26 @@ select,
   opacity: 1;
   background: rgba(0, 0, 0, 0.4);
 }
+/* #73 "has notes" indicator: when the task has non-empty notes, the icon is
+   always fully lit and tinted with a teal accent (+ tiny corner dot badge)
+   instead of the dim default — a minimal, no-new-element signal. */
+.task-note-btn.has-notes {
+  opacity: 1;
+  color: #5eead4;
+  background: rgba(94, 234, 212, 0.18);
+  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.35) inset;
+}
+.task-note-btn.has-notes::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5eead4;
+  box-shadow: 0 0 5px rgba(94, 234, 212, 0.9);
+}
 
 /* Task detail drawer: slides in from the right edge. */
 @keyframes panelSlideIn {

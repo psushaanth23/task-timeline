@@ -427,10 +427,10 @@ export default function Timeline(props) {
                 data-no-drag + stopPropagation so it never selects/drags/renames. */}
             <button
               type="button"
-              className="task-note-btn"
+              className={t.hasNotes ? 'task-note-btn has-notes' : 'task-note-btn'}
               data-no-drag="true"
-              title="Open notes"
-              aria-label="Open notes panel"
+              title={t.hasNotes ? 'Open notes' : 'Add notes'}
+              aria-label={t.hasNotes ? 'Open notes panel (has notes)' : 'Open notes panel'}
               onMouseDown={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
               onClick={t.onOpenPanel}

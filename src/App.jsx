@@ -1857,6 +1857,10 @@ export default class App extends React.Component {
         externalLabelStyle,
         hud,
         done,
+        // #73: lit when this task has non-empty (non-whitespace) notes; drives
+        // the accented state of the on-card notes icon. Derived from the same
+        // t.notes the DetailPanel/MarkdownNotes edits, so it updates live.
+        hasNotes: !!(t.notes && t.notes.trim()),
         editing: this.state.editingId === t.id,
         timeLabel: fmt(start, this.props.timeFormat) + ' · ' + durLabel(duration),
         onClick: (e) => {
