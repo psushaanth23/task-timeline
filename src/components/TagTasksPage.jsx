@@ -273,19 +273,39 @@ export default function TagTasksPage({ tags, selectedTagId, rows, onSelectTag, o
 
         <h1
           style={{
-            margin: '22px 0 4px',
+            margin: '22px 0 10px',
             fontSize: '24px',
             fontFamily: "'Orbitron','Space Grotesk',sans-serif",
             letterSpacing: '.08em',
             textTransform: 'uppercase',
-            background: 'linear-gradient(90deg,#e7fbff,' + accent + ')',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
+            color: '#eef4f8',
           }}
         >
           {selected ? selected.label : 'Tag'} · Tasks
         </h1>
+        {/* #80: slim lit accent line — color-on-color (teal → violet → the active
+            tag's own color), soft-faded at both ends with a faint outer glow, so
+            each tag page gets its own on-brand accent against the dark theme. */}
+        <div
+          style={{
+            height: '3px',
+            width: '100%',
+            maxWidth: '340px',
+            borderRadius: '999px',
+            margin: '0 0 10px',
+            background:
+              'linear-gradient(90deg, rgba(45,212,191,0) 0%, ' +
+              hexToRgba('#2dd4bf', 0.9) +
+              ' 16%, ' +
+              hexToRgba('#818cf8', 0.9) +
+              ' 48%, ' +
+              hexToRgba(accent, 1) +
+              ' 80%, ' +
+              hexToRgba(accent, 0) +
+              ' 100%)',
+            boxShadow: '0 0 10px ' + hexToRgba(accent, 0.5) + ', 0 0 6px ' + hexToRgba('#2dd4bf', 0.35),
+          }}
+        />
         <p style={{ margin: 0, fontSize: '13px', color: 'rgba(231,233,238,.5)', fontFamily: "'JetBrains Mono',monospace" }}>
           {selected
             ? all.length + ' task' + (all.length === 1 ? '' : 's') +
