@@ -8,7 +8,7 @@ import ArchivePage from './components/ArchivePage.jsx';
 import TagManagerPage from './components/TagManagerPage.jsx';
 import TagTasksPage from './components/TagTasksPage.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
-import { fmt, fmtHour, fmtQuarter, fmtDateTime, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
+import { fmt, fmtHour, fmtHM, fmtDateTime, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
 import { loadData, saveData, loadView, saveView } from './lib/storage.js';
@@ -1856,25 +1856,33 @@ export default class App extends React.Component {
         whiteSpace: 'nowrap',
       },
     }));
-    // #85/#91: quarter-hour labels between the hour labels on the horizontal
-    // ruler, now showing the FULL time (e.g. "9:15"/"9:30"/"9:45", honoring the
-    // 12/24h setting; no AM/PM — the hour label carries the period). Density/
-    // zoom-aware so they never crowd: `px` is px per minute, so a quarter spans
-    // 15*px. Below ~22px/quarter show nothing; once a half-hour has room show
-    // :30; when quarters are comfortably wide show all three. Kept smaller +
-    // dimmer than the hour labels (fontSize 8.5 vs 11, alpha .45 vs .5) for a
-    // clear hierarchy — slightly brighter than before (#91).
-    const quarterMarks = 15 * px >= 40 ? [15, 30, 45] : 15 * px >= 22 ? [30] : [];
-    const quarterTicks = [];
-    if (!V && quarterMarks.length) {
+    // #95: ten-minute minor labels between the hour labels on the horizontal
+    // ruler (:10/:20/:30/:40/:50), each showing the FULL time (e.g. "9:10",
+    // honoring the 12/24h setting; no AM/PM — the hour label carries the period).
+    // This replaces the #85/#91 quarter-hour system and aligns with the app's
+    // 10-min task snapping. Density/zoom-aware so they never crowd: `px` is px
+    // per minute, so a 10-min step spans 10*px. When wide show all five; when
+    // moderate show every other (:20/:40); when tighter show just :30; below
+    // that show none. Kept smaller + dimmer than the hour labels (fontSize 8.5
+    // vs 11, alpha .45 vs .5) for a clear hierarchy.
+    const minorMarks =
+      10 * px >= 32
+        ? [10, 20, 30, 40, 50]
+        : 10 * px >= 18
+          ? [20, 40]
+          : 10 * px >= 12
+            ? [30]
+            : [];
+    const minorTicks = [];
+    if (!V && minorMarks.length) {
       for (let h = 0; h < 48; h++) {
-        for (const q of quarterMarks) {
-          quarterTicks.push({
-            key: h + '-' + q,
-            label: fmtQuarter(h * 60 + q, this.props.timeFormat),
+        for (const m of minorMarks) {
+          minorTicks.push({
+            key: h + '-' + m,
+            label: fmtHM(h * 60 + m, this.props.timeFormat),
             style: {
               position: 'absolute',
-              left: gutterW + (h * 60 + q) * px + 'px',
+              left: gutterW + (h * 60 + m) * px + 'px',
               top: dateBarH + 'px',
               height: hourBarH + 'px',
               display: 'flex',
@@ -2278,45 +2286,42 @@ export default class App extends React.Component {
       pendingLive = { d: bezier(x1, y1, pending.x, pending.y, V) };
     }
 
-    const halfHour = 30 * px;
-    const quarter = 15 * px;
-    // Faint quarter-hour lines at :15 and :45 — a 30-min-period repeating line
-    // offset by 15 min, drawn fainter than the hour/:30 lines (hierarchy:
-    // hour/:30 .07 > :15/:45 .03).
-    const quarterLines = (dir) =>
+    // #95: 10-minute grid. Mild minor lines every 10 min (:00/:10/.../:50) with a
+    // slightly stronger line on the hour, replacing the old 15-min lines. The
+    // minor lines are density-gated (looser than the labels) so they don't turn
+    // into a solid wash at very tight zoom; the hour lines always stay.
+    const tenMin = 10 * px;
+    const hourSpan = 60 * px;
+    const showMinorGrid = tenMin >= 7;
+    const minorLines = (dir) =>
       'repeating-linear-gradient(' +
       dir +
-      ', transparent 0, transparent ' +
-      quarter +
-      'px, rgba(255,255,255,.03) ' +
-      quarter +
-      'px, rgba(255,255,255,.03) ' +
-      (quarter + 1) +
-      'px, transparent ' +
-      (quarter + 1) +
-      'px, transparent ' +
-      halfHour +
+      ', rgba(255,255,255,.03) 0, rgba(255,255,255,.03) 1px, transparent 1px, transparent ' +
+      tenMin +
       'px)';
-    const halfLines = (dir) =>
+    const hourLines = (dir) =>
       'repeating-linear-gradient(' +
       dir +
       ', rgba(255,255,255,.07) 0, rgba(255,255,255,.07) 1px, transparent 1px, transparent ' +
-      halfHour +
+      hourSpan +
       'px)';
+    // Hour lines listed first so they paint ON TOP of the mild minor lines.
+    const gridImage = (dir) =>
+      showMinorGrid ? hourLines(dir) + ',' + minorLines(dir) : hourLines(dir);
     const gridOverlayStyle = V
       ? {
           position: 'absolute',
           inset: 0,
           pointerEvents: 'none',
           zIndex: 1,
-          backgroundImage: quarterLines('to bottom') + ',' + halfLines('to bottom'),
+          backgroundImage: gridImage('to bottom'),
         }
       : {
           position: 'absolute',
           inset: 0,
           pointerEvents: 'none',
           zIndex: 1,
-          backgroundImage: quarterLines('to right') + ',' + halfLines('to right'),
+          backgroundImage: gridImage('to right'),
         };
     const contentW = V ? trackAxisSize : timeAxisSize;
     const contentH = V ? timeAxisSize : trackAxisSize;
@@ -2490,7 +2495,7 @@ export default class App extends React.Component {
       dividers,
       dividerAdds,
       hourTicks,
-      quarterTicks,
+      minorTicks,
       hourTicksV,
       dayBands,
       dayBandsV,

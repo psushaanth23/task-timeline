@@ -107,7 +107,7 @@ export default function Timeline(props) {
     notVertical,
     dayBands,
     hourTicks,
-    quarterTicks = [],
+    minorTicks = [],
     lanes,
     showNow,
     nowRulerStyle,
@@ -681,7 +681,7 @@ export default function Timeline(props) {
             {hourTicks.map((tick, i) => (
               <div key={i} style={tick.style}>{tick.label}</div>
             ))}
-            {quarterTicks.map((tick) => (
+            {minorTicks.map((tick) => (
               <div key={tick.key} style={tick.style}>{tick.label}</div>
             ))}
           </>
