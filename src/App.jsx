@@ -1378,6 +1378,16 @@ export default class App extends React.Component {
     if (this.state.panelTaskId) this.setState({ panelTaskId: null });
   }
 
+  // Rename a task by id (used by the detail-panel header). Reuses persist() so
+  // it saves + is undoable, matching card inline rename.
+  setTaskTitle(id, text) {
+    const title = (text || '').trim() || 'Untitled';
+    const cur = this.state.tasks.find((t) => t.id === id);
+    if (!cur || cur.title === title) return;
+    const tasks = this.state.tasks.map((t) => (t.id === id ? { ...t, title } : t));
+    this.persist(tasks);
+  }
+
   // Inline title editing (replaces the old modal).
   startInlineEdit(task) {
     this.setState({ editingId: task.id });
@@ -1861,9 +1871,11 @@ export default class App extends React.Component {
           // schedules inline title editing; a third click within the window is
           // a triple-click, so cancel the edit and toggle done/blackout.
           if (e.detail === 1) {
-            // Single clean click selects the task AND opens its detail panel
-            // (switching the panel if another task's was open).
-            this.setState({ selection: [t.id], panelTaskId: t.id });
+            // Single clean click just selects the task (cyan ring). The Markdown
+            // panel is opened via the on-card notes icon (#71), not by clicking
+            // the card, so double-click (rename) / triple-click (done) stay
+            // reliable.
+            this.setState({ selection: [t.id] });
           } else if (e.detail === 2) {
             clearTimeout(this._clickTimer);
             this._clickTimer = setTimeout(() => this.startInlineEdit(t), 260);
@@ -1871,6 +1883,12 @@ export default class App extends React.Component {
             clearTimeout(this._clickTimer);
             this.toggleDone(t);
           }
+        },
+        // Opens the right-side Markdown detail panel for this task (from the
+        // on-card notes icon). Selects the task too but never drags/renames/dones.
+        onOpenPanel: (e) => {
+          e.stopPropagation();
+          this.setState({ selection: [t.id], panelTaskId: t.id });
         },
         onDbl: (e) => {
           // Swallow so double-clicking a task never bubbles to the board's
@@ -2297,10 +2315,13 @@ export default class App extends React.Component {
             <DetailPanel
               task={panelTask}
               timeLabel={panelTimeLabel}
+              done={!!panelTask.done}
               width={this.state.panelWidth}
               resizing={!!this.state.panelResizing}
               onResizeDown={(e) => this.startPanelResize(e)}
               onClose={() => this.closePanel()}
+              onRename={(id, title) => this.setTaskTitle(id, title)}
+              onToggleDone={() => this.toggleDone(panelTask)}
               onSaveNotes={(notes) => this.setTaskNotes(panelTask.id, notes)}
             />
           )}

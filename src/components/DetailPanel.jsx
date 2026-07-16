@@ -73,6 +73,39 @@ const closeBtnStyle = {
   cursor: 'pointer',
 };
 
+const nameInputStyle = {
+  width: '100%',
+  boxSizing: 'border-box',
+  fontSize: '16px',
+  fontWeight: 700,
+  color: '#f0f2f6',
+  lineHeight: 1.25,
+  background: 'rgba(0,0,0,.35)',
+  border: '1px solid rgba(120,200,220,.4)',
+  borderRadius: '6px',
+  padding: '2px 6px',
+  outline: 'none',
+};
+
+const doneBtnStyle = (done) => ({
+  flex: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '5px',
+  height: '28px',
+  padding: '0 11px',
+  borderRadius: '8px',
+  fontSize: '12px',
+  fontWeight: 700,
+  fontFamily: "'JetBrains Mono',ui-monospace,monospace",
+  letterSpacing: '.02em',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  border: done ? '1px solid rgba(74,222,128,.55)' : '1px solid rgba(255,255,255,.16)',
+  background: done ? 'rgba(74,222,128,.16)' : 'rgba(255,255,255,.05)',
+  color: done ? '#4ade80' : 'rgba(231,233,238,.8)',
+});
+
 const bodyStyle = {
   flex: 1,
   minHeight: 0,
@@ -96,27 +129,57 @@ const sectionLabelStyle = {
 export default function DetailPanel({
   task,
   timeLabel,
+  done = false,
   width = 410,
   resizing = false,
   onResizeDown,
   onClose,
+  onRename,
+  onToggleDone,
   onSaveNotes,
 }) {
+  const [editingName, setEditingName] = React.useState(false);
+  const [draft, setDraft] = React.useState('');
+  const nameRef = React.useRef(null);
+  const taskId = task && task.id;
+
   React.useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
       const el = document.activeElement;
       const typing =
         el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable);
-      // While editing notes, Escape cancels the edit (handled locally) rather
-      // than closing the whole panel.
+      // While editing the name or notes, Escape cancels that edit (handled
+      // locally) rather than closing the whole panel.
       if (!typing) onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Switching to a different task cancels any in-progress name edit.
+  React.useEffect(() => {
+    setEditingName(false);
+  }, [taskId]);
+
+  React.useEffect(() => {
+    if (editingName && nameRef.current) {
+      nameRef.current.focus();
+      nameRef.current.select();
+    }
+  }, [editingName]);
+
   if (!task) return null;
+
+  const startNameEdit = () => {
+    setDraft(task.title || '');
+    setEditingName(true);
+  };
+  const commitName = () => {
+    setEditingName(false);
+    const next = (draft || '').trim();
+    if (next && next !== task.title) onRename(task.id, next);
+  };
 
   const panelStyle = {
     ...panelStyleBase,
@@ -140,11 +203,57 @@ export default function DetailPanel({
       />
       <div style={headerStyle}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={titleStyle} title={task.title}>
-            {task.title || 'Untitled task'}
-          </div>
+          {editingName ? (
+            <input
+              ref={nameRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitName();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setEditingName(false);
+                }
+              }}
+              aria-label="Task name"
+              style={nameInputStyle}
+            />
+          ) : (
+            <div
+              style={{ ...titleStyle, cursor: 'text' }}
+              title={(task.title || '') + '  (double-click to rename)'}
+              onDoubleClick={startNameEdit}
+            >
+              {task.title || 'Untitled task'}
+            </div>
+          )}
           <div style={metaStyle}>{timeLabel}</div>
         </div>
+        <button
+          type="button"
+          onClick={onToggleDone}
+          aria-label={done ? 'Reopen task' : 'Mark task done'}
+          title={done ? 'Completed — click to reopen' : 'Mark task as done'}
+          style={doneBtnStyle(done)}
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          {done ? 'Done' : 'Mark done'}
+        </button>
         <button
           type="button"
           onClick={onClose}

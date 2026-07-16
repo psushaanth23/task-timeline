@@ -143,6 +143,35 @@ select,
   }
 }
 
+/* On-card notes icon (#71): opens the Markdown detail panel. Subtle by default,
+   brightens on card/self hover. Sits in the card's top-right corner. */
+.task-note-btn {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  color: currentColor;
+  background: rgba(0, 0, 0, 0.22);
+  opacity: 0.45;
+  cursor: pointer;
+  transition: opacity 0.12s ease, background 0.12s ease;
+  z-index: 5;
+}
+.task-card:hover .task-note-btn {
+  opacity: 0.9;
+}
+.task-note-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.4);
+}
+
 /* Task detail drawer: slides in from the right edge. */
 @keyframes panelSlideIn {
   from {

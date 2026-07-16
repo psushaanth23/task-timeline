@@ -367,6 +367,7 @@ export default function Timeline(props) {
         {taskViews.map(t => (
           <div
             key={t.id}
+            className="task-card"
             style={t.style}
             title={t.editing ? undefined : t.title}
             onMouseDown={t.onMouseDown}
@@ -422,6 +423,25 @@ export default function Timeline(props) {
               style={t.dotEndStyle}
             />
             <div onMouseDown={t.onResizeDown} style={t.resizeHandleStyle} />
+            {/* Notes icon (#71): opens the Markdown detail panel for this task.
+                data-no-drag + stopPropagation so it never selects/drags/renames. */}
+            <button
+              type="button"
+              className="task-note-btn"
+              data-no-drag="true"
+              title="Open notes"
+              aria-label="Open notes panel"
+              onMouseDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onClick={t.onOpenPanel}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 3h11l5 5v13a0 0 0 0 1 0 0H4z" />
+                <path d="M14 3v5h5" />
+                <line x1="8" y1="13" x2="16" y2="13" />
+                <line x1="8" y1="17" x2="13" y2="17" />
+              </svg>
+            </button>
             {renderHud(t.hud)}
           </div>
         ))}
