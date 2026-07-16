@@ -321,7 +321,11 @@ select,
 }
 .md-body img {
   max-width: 100%;
-  border-radius: 6px;
+  height: auto;
+  display: block;
+  margin: 10px 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 .md-body input[type='checkbox'] {
   margin-right: 6px;
