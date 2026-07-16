@@ -1974,8 +1974,10 @@ export default class App extends React.Component {
       // Narrow (short) horizontal cards can't fit a readable title, so hide the
       // in-card text and show the name just to the right of the card. Vertical
       // cards span the full track width, so their ellipsis'd title + tooltip
-      // suffice. The label is pointer-events:none so it never blocks
-      // drag/resize/select/rename.
+      // suffice. #84: the label is hoverable (pointerEvents:auto) so it can carry
+      // the full-name `title` tooltip for the very cards that need it most (the
+      // narrow ones), but it stops its own mousedown so it never starts a
+      // drag/marquee — gestures stay owned by the card body.
       const narrow = !V && len < NARROW_CARD_PX;
       // How many lines the title may wrap to before ellipsis-clamping. Derived
       // from the card's available height so tall cards (e.g. long vertical
@@ -1999,7 +2001,8 @@ export default class App extends React.Component {
         fontWeight: 600,
         color: done ? 'rgba(231,233,238,.45)' : '#eef0f4',
         textShadow: '0 1px 4px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.75)',
-        pointerEvents: 'none',
+        cursor: 'default',
+        pointerEvents: 'auto',
         zIndex: 4,
       };
       // Live scrubbing HUD: show start/end time-of-day pills while this task is

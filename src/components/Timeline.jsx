@@ -412,6 +412,9 @@ export default function Timeline(props) {
             key={t.id}
             className="task-card"
             style={t.style}
+            /* #84: the full task name is ALWAYS exposed as a native tooltip on
+               hover (never gated on measured truncation, zoom, or card width);
+               only suppressed while inline-renaming so it can't cover the caret. */
             title={t.editing ? undefined : t.title}
             onMouseDown={t.onMouseDown}
             onClick={t.onClick}
@@ -458,7 +461,16 @@ export default function Timeline(props) {
                 {t.timeLabel}
               </div>
             )}
-            {t.narrow && !t.editing && <div style={t.externalLabelStyle}>{t.title}</div>}
+            {t.narrow && !t.editing && (
+              <div
+                title={t.title}
+                data-no-drag="true"
+                onMouseDown={(e) => e.stopPropagation()}
+                style={t.externalLabelStyle}
+              >
+                {t.title}
+              </div>
+            )}
             <div
               data-dot="true"
               data-task-id={t.id}
