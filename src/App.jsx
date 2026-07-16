@@ -2503,6 +2503,8 @@ export default class App extends React.Component {
         <ArchivePage
           deletedTracks={this.state.deletedTracks}
           tags={this.state.tags}
+          originMs={this.state.originMs}
+          timeFormat={this.props.timeFormat}
           onRestore={(id) => this.restoreTrack(id)}
           onPurge={(id) => this.purgeDeletedTrack(id)}
           onBack={() => this.goTimeline()}

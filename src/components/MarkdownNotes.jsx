@@ -16,6 +16,24 @@ const mdComponents = {
   a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
 };
 
+// Read-only rendered Markdown, shared by the notes viewer and the archive page
+// (#88) so both use the exact same pipeline: remark-gfm (GFM tables/checklists),
+// rehype-highlight (code syntax highlighting), the safe-by-default component
+// overrides, the `.md-body` theme styles, and pasted-image URLs. No editing.
+export function MarkdownView({ value }) {
+  return (
+    <div className="md-body">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+        components={mdComponents}
+      >
+        {value}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 // #86: Markdown bullet auto-continue. Given the textarea's value + collapsed
 // caret, decide what Enter should do on a bullet line (`-`/`*`):
 //   • non-empty bullet  → insert a newline pre-filled with the SAME indent +
@@ -258,15 +276,7 @@ export default function MarkdownNotes({ value, onSave }) {
       {empty ? (
         <div style={placeholderStyle}>No notes yet — double-click to add Markdown notes.</div>
       ) : (
-        <div className="md-body">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
-            components={mdComponents}
-          >
-            {value}
-          </ReactMarkdown>
-        </div>
+        <MarkdownView value={value} />
       )}
     </div>
   );
