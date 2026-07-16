@@ -283,27 +283,15 @@ export default function TagTasksPage({ tags, selectedTagId, rows, onSelectTag, o
         >
           {selected ? selected.label : 'Tag'} · Tasks
         </h1>
-        {/* #80: slim lit accent line — color-on-color (teal → violet → the active
-            tag's own color), soft-faded at both ends with a faint outer glow, so
-            each tag page gets its own on-brand accent against the dark theme. */}
+        {/* #81: dead-simple thin accent bar — a solid full-width two-stop
+            teal → violet gradient, no glow and no transparent end fades. */}
         <div
           style={{
             height: '3px',
             width: '100%',
-            maxWidth: '340px',
             borderRadius: '999px',
             margin: '0 0 10px',
-            background:
-              'linear-gradient(90deg, rgba(45,212,191,0) 0%, ' +
-              hexToRgba('#2dd4bf', 0.9) +
-              ' 16%, ' +
-              hexToRgba('#818cf8', 0.9) +
-              ' 48%, ' +
-              hexToRgba(accent, 1) +
-              ' 80%, ' +
-              hexToRgba(accent, 0) +
-              ' 100%)',
-            boxShadow: '0 0 10px ' + hexToRgba(accent, 0.5) + ', 0 0 6px ' + hexToRgba('#2dd4bf', 0.35),
+            background: 'linear-gradient(90deg, #2dd4bf, #8b5cf6)',
           }}
         />
         <p style={{ margin: 0, fontSize: '13px', color: 'rgba(231,233,238,.5)', fontFamily: "'JetBrains Mono',monospace" }}>
