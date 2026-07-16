@@ -40,6 +40,7 @@ export default function Timeline(props) {
     editingTitle,
     onCommitTitle,
     onCancelTitle,
+    onLaneScroll,
   } = props;
 
   // Ref to the currently-editing title element; cancelRef distinguishes an
@@ -214,7 +215,7 @@ export default function Timeline(props) {
   };
 
   return (
-    <div ref={scrollRef} style={scrollWrapStyle || { flex: 1, overflowX: 'auto', overflowY: 'visible' }}>
+    <div ref={scrollRef} onScroll={onLaneScroll} style={scrollWrapStyle || { flex: 1, overflowX: 'auto', overflowY: 'visible' }}>
       <div style={rulerStyle}>
         {notVertical && (
           <>

@@ -47,6 +47,7 @@ export default class App extends React.Component {
     this.contentRef = React.createRef();
     this.scrollRef = React.createRef();
     this.boardRef = React.createRef();
+    this.sidebarRef = React.createRef();
     this.palette = PALETTE;
     // The timeline's pixel-0 is a fixed, absolute moment (local midnight of the
     // anchor day). Task `start` is a minute offset from this origin, so a task
@@ -126,6 +127,38 @@ export default class App extends React.Component {
     this._diskTimer = null;
     this.onDocKeyDown = this.onDocKeyDown.bind(this);
     this.onHashChange = this.onHashChange.bind(this);
+    this.onLaneScroll = this.onLaneScroll.bind(this);
+    this.onSidebarScroll = this.onSidebarScroll.bind(this);
+  }
+
+  // #83: keep the sidebar track list and the lane area scrolling in lockstep
+  // (horizontal mode). Both panes are independent vertical scrollers with equal
+  // scrollHeight (sticky header/ruler + trackAxisSize), so mirroring scrollTop
+  // keeps track name N glued to lane N at any offset. `_scrollSyncing` (cleared
+  // next frame) breaks the mirror-triggers-mirror feedback loop. No-op in
+  // vertical mode, where the board wrapper is already the single scroller.
+  onLaneScroll() {
+    if (this.state.orientation === 'vertical' || this._scrollSyncing) return;
+    const lane = this.scrollRef.current;
+    const side = this.sidebarRef.current;
+    if (!lane || !side) return;
+    this._scrollSyncing = true;
+    side.scrollTop = lane.scrollTop;
+    requestAnimationFrame(() => {
+      this._scrollSyncing = false;
+    });
+  }
+
+  onSidebarScroll() {
+    if (this.state.orientation === 'vertical' || this._scrollSyncing) return;
+    const lane = this.scrollRef.current;
+    const side = this.sidebarRef.current;
+    if (!lane || !side) return;
+    this._scrollSyncing = true;
+    lane.scrollTop = side.scrollTop;
+    requestAnimationFrame(() => {
+      this._scrollSyncing = false;
+    });
   }
 
   // Time density (px per minute) for the current orientation. Vertical mode
@@ -2262,7 +2295,12 @@ export default class App extends React.Component {
       sidebarWrapStyle: {
         flex: 'none',
         width: (this.state.sidebarCollapsed ? 38 : this.state.sidebarWidth) + 'px',
-        overflow: 'hidden',
+        // Horizontal mode: the sidebar is its own vertical scroller, mirrored to
+        // the lane pane (see onLaneScroll/onSidebarScroll) so track names stay in
+        // lockstep with their lanes. Vertical mode keeps overflow hidden — the
+        // board wrapper is the single scroller there.
+        overflowX: 'hidden',
+        overflowY: V ? 'hidden' : 'auto',
         display: 'flex',
         flexDirection: 'column',
         borderRight: '1px solid rgba(255,255,255,.08)',
@@ -2270,6 +2308,9 @@ export default class App extends React.Component {
         position: 'relative',
         transition: this.state.sidebarResizing ? 'none' : 'width .15s ease',
       },
+      sidebarRef: this.sidebarRef,
+      onSidebarScroll: this.onSidebarScroll,
+      onLaneScroll: this.onLaneScroll,
       gutterHeaderStyle: {
         position: 'sticky',
         top: 0,

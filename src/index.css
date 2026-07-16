@@ -182,6 +182,18 @@ select,
   box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.35) inset, 0 0 7px rgba(94, 234, 212, 0.55);
 }
 
+/* #83: the sidebar mirrors the lane pane's vertical scroll, so hide its own
+   scrollbar to avoid a redundant second track — the lane pane shows the bar. */
+.sidebar-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 /* Track divider dot handles (#75). Both sit near the label edge of a lane
    boundary. The add-dot is subtle until hovered; the delete-dot glows teal
    (matching the divider line) and turns red on hover to signal removal. The
