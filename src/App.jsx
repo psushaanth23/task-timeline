@@ -1799,6 +1799,38 @@ export default class App extends React.Component {
         whiteSpace: 'nowrap',
       },
     }));
+    // #85: quarter-hour labels (:15/:30/:45) between the hour labels on the
+    // horizontal ruler. Density/zoom-aware so they never crowd: `px` is px per
+    // minute, so a quarter spans 15*px. Below ~22px/quarter show nothing; once a
+    // half-hour has room show :30; when quarters are comfortably wide show all
+    // three. Smaller + dimmer than the hour labels for a clear hierarchy.
+    const quarterMarks = 15 * px >= 40 ? [15, 30, 45] : 15 * px >= 22 ? [30] : [];
+    const quarterTicks = [];
+    if (!V && quarterMarks.length) {
+      for (let h = 0; h < 48; h++) {
+        for (const q of quarterMarks) {
+          quarterTicks.push({
+            key: h + '-' + q,
+            label: ':' + q,
+            style: {
+              position: 'absolute',
+              left: (h * 60 + q) * px + 'px',
+              top: dateBarH + 'px',
+              height: hourBarH + 'px',
+              display: 'flex',
+              alignItems: 'center',
+              paddingLeft: '4px',
+              fontSize: '8.5px',
+              color: 'rgba(231,233,238,.26)',
+              borderLeft: '1px solid rgba(255,255,255,.045)',
+              fontFamily: "'JetBrains Mono',monospace",
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+            },
+          });
+        }
+      }
+    }
     const hourTicksV = Array.from({ length: 49 }, (_, h) => ({
       label: fmtHour(h, this.props.timeFormat),
       style: {
@@ -2352,6 +2384,7 @@ export default class App extends React.Component {
       dividers,
       dividerAdds,
       hourTicks,
+      quarterTicks,
       hourTicksV,
       dayBands,
       dayBandsV,
