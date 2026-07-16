@@ -8,7 +8,7 @@ import ArchivePage from './components/ArchivePage.jsx';
 import TagManagerPage from './components/TagManagerPage.jsx';
 import TagTasksPage from './components/TagTasksPage.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
-import { fmt, fmtHour, fmtDateTime, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
+import { fmt, fmtHour, fmtQuarter, fmtDateTime, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
 import { loadData, saveData, loadView, saveView } from './lib/storage.js';
@@ -1856,11 +1856,14 @@ export default class App extends React.Component {
         whiteSpace: 'nowrap',
       },
     }));
-    // #85: quarter-hour labels (:15/:30/:45) between the hour labels on the
-    // horizontal ruler. Density/zoom-aware so they never crowd: `px` is px per
-    // minute, so a quarter spans 15*px. Below ~22px/quarter show nothing; once a
-    // half-hour has room show :30; when quarters are comfortably wide show all
-    // three. Smaller + dimmer than the hour labels for a clear hierarchy.
+    // #85/#91: quarter-hour labels between the hour labels on the horizontal
+    // ruler, now showing the FULL time (e.g. "9:15"/"9:30"/"9:45", honoring the
+    // 12/24h setting; no AM/PM — the hour label carries the period). Density/
+    // zoom-aware so they never crowd: `px` is px per minute, so a quarter spans
+    // 15*px. Below ~22px/quarter show nothing; once a half-hour has room show
+    // :30; when quarters are comfortably wide show all three. Kept smaller +
+    // dimmer than the hour labels (fontSize 8.5 vs 11, alpha .45 vs .5) for a
+    // clear hierarchy — slightly brighter than before (#91).
     const quarterMarks = 15 * px >= 40 ? [15, 30, 45] : 15 * px >= 22 ? [30] : [];
     const quarterTicks = [];
     if (!V && quarterMarks.length) {
@@ -1868,7 +1871,7 @@ export default class App extends React.Component {
         for (const q of quarterMarks) {
           quarterTicks.push({
             key: h + '-' + q,
-            label: ':' + q,
+            label: fmtQuarter(h * 60 + q, this.props.timeFormat),
             style: {
               position: 'absolute',
               left: gutterW + (h * 60 + q) * px + 'px',
@@ -1878,8 +1881,8 @@ export default class App extends React.Component {
               alignItems: 'center',
               paddingLeft: '4px',
               fontSize: '8.5px',
-              color: 'rgba(231,233,238,.26)',
-              borderLeft: '1px solid rgba(255,255,255,.045)',
+              color: 'rgba(231,233,238,.45)',
+              borderLeft: '1px solid rgba(255,255,255,.06)',
               fontFamily: "'JetBrains Mono',monospace",
               whiteSpace: 'nowrap',
               pointerEvents: 'none',

@@ -42,6 +42,18 @@ export function fmt(m, timeFormat = '12h') {
   return hh + ':' + pad(mm) + ' ' + ap;
 }
 
+// #91: full time for a quarter-hour tick (e.g. "9:15" / "21:15"). Takes total
+// minutes-from-midnight and honors the 12/24h setting, but WITHOUT the AM/PM
+// period — the adjacent hour label already carries it, and quarters stay compact.
+export function fmtQuarter(totalMin, timeFormat = '12h') {
+  const h = Math.floor(totalMin / 60) % 24;
+  const mm = Math.round(totalMin % 60);
+  if (timeFormat === '24h') return pad(h) + ':' + pad(mm);
+  let hh = h % 12;
+  if (hh === 0) hh = 12;
+  return hh + ':' + pad(mm);
+}
+
 export function fmtHour(h, timeFormat = '12h') {
   const hr = h % 24;
   if (timeFormat === '24h') return pad(hr) + ':00';
