@@ -4,13 +4,22 @@ import { hexToRgba } from '../lib/color.js';
 // The canonical tag chip used under track names. Shared so previews (e.g. the
 // Tag Manager) render exactly the same on-track appearance: a tinted pill with
 // the tag color as fill + text + border.
-export default function TagChip({ label, color, title, onClick }) {
+//
+// A clickable chip renders as a real <button> (keyboard-accessible), but must
+// stay the SAME small size as the static chip — it explicitly sets its font
+// instead of inheriting the (larger) surrounding row font, so sidebar track
+// tags read as subtle little corner labels rather than bulky pill buttons.
+export default function TagChip({ label, color, title, onClick, size = 'sm' }) {
   const clickable = typeof onClick === 'function';
+  const dims = size === 'lg' ? { fontSize: '12.5px', padding: '3px 11px' } : { fontSize: '11px', padding: '1px 8px' };
   const style = {
-    fontSize: '11px',
+    display: 'inline-block',
+    fontFamily: "'Space Grotesk',sans-serif",
+    fontSize: dims.fontSize,
     lineHeight: 1.35,
     fontWeight: 600,
-    padding: '1px 8px',
+    padding: dims.padding,
+    margin: 0,
     borderRadius: '999px',
     color: color,
     background: hexToRgba(color, 0.16),
@@ -19,10 +28,11 @@ export default function TagChip({ label, color, title, onClick }) {
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
+    verticalAlign: 'middle',
   };
   if (clickable) {
-    // Render as a real button so it's keyboard-accessible; stopPropagation keeps
-    // the click from starting a track drag / rename on the surrounding row.
+    // stopPropagation keeps the click from starting a track drag / rename on the
+    // surrounding row.
     return (
       <button
         type="button"
@@ -34,7 +44,7 @@ export default function TagChip({ label, color, title, onClick }) {
           e.preventDefault();
           onClick(e);
         }}
-        style={{ ...style, cursor: 'pointer', font: 'inherit' }}
+        style={{ ...style, cursor: 'pointer' }}
       >
         {label}
       </button>
