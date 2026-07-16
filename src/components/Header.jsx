@@ -66,6 +66,8 @@ export default function Header(props) {
     archiveCount = 0,
     onOpenTags,
     tagCount = 0,
+    sidebarCollapsed,
+    toggleSidebar,
   } = props;
 
   // Segmented orientation toggle. `toggleOrientation` simply flips the current
@@ -168,6 +170,39 @@ export default function Header(props) {
             Vertical
           </button>
         </div>
+        {/* #87: labels-on-lanes toggle (horizontal only). Hides the left track
+            label gutter for a full-width track view; state persists via the same
+            sidebarCollapsed flag. Vertical mode uses top headers, so it's hidden
+            there to keep a single coherent collapse control per orientation. */}
+        {!isVertical && (
+          <HoverButton
+            onClick={toggleSidebar}
+            title={sidebarCollapsed ? 'Show track labels' : 'Hide track labels'}
+            aria-label={sidebarCollapsed ? 'Show track labels' : 'Hide track labels'}
+            aria-pressed={!sidebarCollapsed}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '7px',
+              background: sidebarCollapsed ? 'rgba(255,255,255,.05)' : 'rgba(99,102,241,.18)',
+              border: sidebarCollapsed ? '1px solid rgba(255,255,255,.12)' : '1px solid rgba(99,102,241,.5)',
+              color: sidebarCollapsed ? 'rgba(231,233,238,.7)' : '#a5b4fc',
+              padding: '8px 13px',
+              borderRadius: '9px',
+              fontSize: '13px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontFamily: "'JetBrains Mono',monospace",
+            }}
+            hoverStyle={{ background: sidebarCollapsed ? 'rgba(255,255,255,.1)' : 'rgba(99,102,241,.28)', color: '#e7e9ee' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <line x1="9" y1="4" x2="9" y2="20" />
+            </svg>
+            Labels
+          </HoverButton>
+        )}
         <HoverButton
           onClick={onOpenArchive}
           title="View deleted tracks"

@@ -194,25 +194,38 @@ select,
   display: none;
 }
 
-/* Track divider dot handles (#75). Both sit near the label edge of a lane
-   boundary. The add-dot is subtle until hovered; the delete-dot glows teal
-   (matching the divider line) and turns red on hover to signal removal. The
-   centering transform lives inline, so :hover only touches color/opacity. */
+/* Track divider dot handles (#75, visibility overhauled in #87). Both sit at a
+   lane boundary inside the sticky left label gutter. The add-dot used to be a
+   near-invisible ghost (opacity .3, 11px); it is now clearly present at rest —
+   larger, mostly opaque, with a soft teal ring + glow so each inter-lane gap
+   advertises the "add divider" affordance. The delete-dot glows teal and turns
+   red on hover. The centering transform lives inline, so :hover only touches
+   color/opacity. */
 .divider-add-dot {
-  width: 11px;
-  height: 11px;
+  width: 14px;
+  height: 14px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(94, 234, 212, 0.5);
-  background: rgba(94, 234, 212, 0.14);
-  opacity: 0.3;
+  border: 1px solid rgba(94, 234, 212, 0.7);
+  background: rgba(94, 234, 212, 0.28);
+  box-shadow: 0 0 7px rgba(94, 234, 212, 0.45);
+  opacity: 0.8;
   cursor: pointer;
-  transition: opacity 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+  transition: opacity 0.12s ease, background 0.12s ease, box-shadow 0.12s ease,
+    transform 0.12s ease;
+}
+.divider-add-dot::before {
+  /* Generous invisible hit-zone around the small visual dot for easy clicking
+     without enlarging the rendered dot. */
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
 }
 .divider-add-dot:hover {
   opacity: 1;
-  background: rgba(94, 234, 212, 0.4);
-  box-shadow: 0 0 9px rgba(94, 234, 212, 0.7);
+  background: rgba(94, 234, 212, 0.55);
+  box-shadow: 0 0 11px rgba(94, 234, 212, 0.85);
 }
 .divider-del-dot {
   width: 12px;

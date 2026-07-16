@@ -19,8 +19,6 @@ export default function Sidebar(props) {
     onSidebarResizeDown,
     toggleSidebar,
     sidebarCollapsed,
-    sidebarRef,
-    onSidebarScroll,
   } = props;
 
   const collapseBtnStyle = {
@@ -41,7 +39,7 @@ export default function Sidebar(props) {
   };
 
   return (
-    <div ref={sidebarRef} onScroll={onSidebarScroll} className="sidebar-scroll" style={sidebarWrapStyle}>
+    <div style={sidebarWrapStyle}>
       <div style={gutterHeaderStyle}>
         {!sidebarCollapsed && <span>{gutterHeaderLabel}</span>}
         <button

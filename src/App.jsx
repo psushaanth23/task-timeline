@@ -47,7 +47,6 @@ export default class App extends React.Component {
     this.contentRef = React.createRef();
     this.scrollRef = React.createRef();
     this.boardRef = React.createRef();
-    this.sidebarRef = React.createRef();
     this.palette = PALETTE;
     // The timeline's pixel-0 is a fixed, absolute moment (local midnight of the
     // anchor day). Task `start` is a minute offset from this origin, so a task
@@ -127,38 +126,6 @@ export default class App extends React.Component {
     this._diskTimer = null;
     this.onDocKeyDown = this.onDocKeyDown.bind(this);
     this.onHashChange = this.onHashChange.bind(this);
-    this.onLaneScroll = this.onLaneScroll.bind(this);
-    this.onSidebarScroll = this.onSidebarScroll.bind(this);
-  }
-
-  // #83: keep the sidebar track list and the lane area scrolling in lockstep
-  // (horizontal mode). Both panes are independent vertical scrollers with equal
-  // scrollHeight (sticky header/ruler + trackAxisSize), so mirroring scrollTop
-  // keeps track name N glued to lane N at any offset. `_scrollSyncing` (cleared
-  // next frame) breaks the mirror-triggers-mirror feedback loop. No-op in
-  // vertical mode, where the board wrapper is already the single scroller.
-  onLaneScroll() {
-    if (this.state.orientation === 'vertical' || this._scrollSyncing) return;
-    const lane = this.scrollRef.current;
-    const side = this.sidebarRef.current;
-    if (!lane || !side) return;
-    this._scrollSyncing = true;
-    side.scrollTop = lane.scrollTop;
-    requestAnimationFrame(() => {
-      this._scrollSyncing = false;
-    });
-  }
-
-  onSidebarScroll() {
-    if (this.state.orientation === 'vertical' || this._scrollSyncing) return;
-    const lane = this.scrollRef.current;
-    const side = this.sidebarRef.current;
-    if (!lane || !side) return;
-    this._scrollSyncing = true;
-    lane.scrollTop = side.scrollTop;
-    requestAnimationFrame(() => {
-      this._scrollSyncing = false;
-    });
   }
 
   // Time density (px per minute) for the current orientation. Vertical mode
@@ -1529,6 +1496,11 @@ export default class App extends React.Component {
     const nowMin = this.state.nowMin;
     const barSize = V ? trackHeaderH : rulerH;
     const selectionSet = new Set(this.state.selection);
+    // #87: horizontal label-gutter width (0 when hidden via the header toggle or
+    // in vertical mode). Hoisted here because the ruler ticks below are offset
+    // right by gutterW to stay aligned with the offset lane body.
+    const labelsHidden = !V && this.state.sidebarCollapsed;
+    const gutterW = V ? 0 : labelsHidden ? 0 : this.state.sidebarWidth;
 
     const tagsById = {};
     this.state.tags.forEach((tg) => (tagsById[tg.id] = tg));
@@ -1745,10 +1717,20 @@ export default class App extends React.Component {
             background: 'linear-gradient(90deg, rgba(94,234,212,.5), rgba(94,234,212,.24))',
             boxShadow: '0 0 8px rgba(94,234,212,.35)',
           };
+    // #87: horizontal divider dots live in the sticky label gutter (near its
+    // trailing edge, centered on the lane boundary) with a high z so nothing
+    // covers them and they stay stuck at the left on horizontal scroll; vertical
+    // keeps them along the top edge inside the content.
     const dividerDotStyle = (cross) =>
       V
         ? { position: 'absolute', left: cross + 'px', top: '7px', transform: 'translate(-50%, 0)', zIndex: 5 }
-        : { position: 'absolute', top: cross + 'px', left: '7px', transform: 'translate(0, -50%)', zIndex: 5 };
+        : {
+            position: 'absolute',
+            top: cross + 'px',
+            left: Math.max(6, gutterW - 17) + 'px',
+            transform: 'translate(0, -50%)',
+            zIndex: 40,
+          };
 
     const usedBoundaries = new Set();
     const dividers = [];
@@ -1786,7 +1768,7 @@ export default class App extends React.Component {
       label: fmtHour(h, this.props.timeFormat),
       style: {
         position: 'absolute',
-        left: h * 60 * px + 'px',
+        left: gutterW + h * 60 * px + 'px',
         top: dateBarH + 'px',
         height: hourBarH + 'px',
         display: 'flex',
@@ -1814,7 +1796,7 @@ export default class App extends React.Component {
             label: ':' + q,
             style: {
               position: 'absolute',
-              left: (h * 60 + q) * px + 'px',
+              left: gutterW + (h * 60 + q) * px + 'px',
               top: dateBarH + 'px',
               height: hourBarH + 'px',
               display: 'flex',
@@ -1852,7 +1834,7 @@ export default class App extends React.Component {
         label: dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
         style: {
           position: 'absolute',
-          left: dOff * 1440 * px + 'px',
+          left: gutterW + dOff * 1440 * px + 'px',
           top: 0,
           width: 1440 * px + 'px',
           height: dateBarH + 'px',
@@ -2248,13 +2230,47 @@ export default class App extends React.Component {
         };
     const contentW = V ? trackAxisSize : timeAxisSize;
     const contentH = V ? timeAxisSize : trackAxisSize;
-    const lanesStyle = {
-      position: 'relative',
+    // #87: in HORIZONTAL mode the track labels live in a left gutter that is part
+    // of the scrolling lane body (sticky left), so they can never drift from
+    // their lanes. The lane body is offset right by gutterW; because contentRef
+    // points at that offset inner element, client→content→time math is unchanged.
+    const bodyW = V ? contentW : gutterW + timeAxisSize;
+    const lanesStyle = V
+      ? {
+          position: 'relative',
+          height: contentH + 'px',
+          width: contentW + 'px',
+          // Slightly translucent so the deep-space / Earth-horizon backdrop on the
+          // app root subtly bleeds through the board while staying dark.
+          backgroundColor: 'rgba(16,17,20,0.82)',
+        }
+      : {
+          position: 'absolute',
+          left: gutterW + 'px',
+          top: 0,
+          height: contentH + 'px',
+          width: contentW + 'px',
+          backgroundColor: 'rgba(16,17,20,0.82)',
+        };
+    // Outer body wrapper (horizontal): establishes the full scroll extent
+    // (gutter + timeline) and hosts the sticky label gutter + offset content.
+    const bodyOuterStyle = V
+      ? null
+      : { position: 'relative', width: bodyW + 'px', height: contentH + 'px' };
+    // The sticky-left label column. Solid background + high z so lane content
+    // scrolling underneath it stays hidden; it moves vertically with the lanes
+    // (only `left` is sticky, not `top`).
+    const labelGutterStyle = {
+      position: 'sticky',
+      left: 0,
+      top: 0,
+      flex: 'none',
+      width: gutterW + 'px',
       height: contentH + 'px',
-      width: contentW + 'px',
-      // Slightly translucent so the deep-space / Earth-horizon backdrop on the
-      // app root subtly bleeds through the board while staying dark.
-      backgroundColor: 'rgba(16,17,20,0.82)',
+      background: '#151519',
+      borderRight: '1px solid rgba(255,255,255,.08)',
+      zIndex: 20,
+      boxSizing: 'border-box',
     };
 
     const m = this.state.marquee;
@@ -2312,8 +2328,11 @@ export default class App extends React.Component {
       nowRulerStyle = { ...nowLabelBase, left: '6px', top: nowTop, transform: 'translateY(-50%)' };
     } else {
       const nowLeft = nowMin * px + 'px';
+      // now-line lives inside the offset content wrapper (origin = time 0), so it
+      // needs no gutter offset; the now-label lives in the ruler (origin = scroll
+      // 0), so it does.
       nowStyle = { ...nowLine, left: nowLeft, top: 0, width: '1px', height: contentH + 'px' };
-      nowRulerStyle = { ...nowLabelBase, left: nowLeft, top: dateBarH + 8 + 'px', transform: 'translateX(-50%)' };
+      nowRulerStyle = { ...nowLabelBase, left: gutterW + nowMin * px + 'px', top: dateBarH + 8 + 'px', transform: 'translateX(-50%)' };
     }
 
     const editingTask = this.state.editingId
@@ -2327,15 +2346,15 @@ export default class App extends React.Component {
       sidebarToggleLabel: this.state.sidebarCollapsed ? '» Show sidebar' : '« Hide sidebar',
       sidebarCollapsed: this.state.sidebarCollapsed,
       gutterHeaderLabel: V ? 'Time' : 'Tracks',
+      // #87: the standalone sidebar column now only renders in VERTICAL mode (the
+      // time ruler). Horizontal track labels live in Timeline's sticky lane
+      // gutter. Vertical keeps overflow hidden — the board wrapper is the single
+      // scroller, so the time column scrolls in lockstep with the lanes.
       sidebarWrapStyle: {
         flex: 'none',
         width: (this.state.sidebarCollapsed ? 38 : this.state.sidebarWidth) + 'px',
-        // Horizontal mode: the sidebar is its own vertical scroller, mirrored to
-        // the lane pane (see onLaneScroll/onSidebarScroll) so track names stay in
-        // lockstep with their lanes. Vertical mode keeps overflow hidden — the
-        // board wrapper is the single scroller there.
         overflowX: 'hidden',
-        overflowY: V ? 'hidden' : 'auto',
+        overflowY: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         borderRight: '1px solid rgba(255,255,255,.08)',
@@ -2343,9 +2362,6 @@ export default class App extends React.Component {
         position: 'relative',
         transition: this.state.sidebarResizing ? 'none' : 'width .15s ease',
       },
-      sidebarRef: this.sidebarRef,
-      onSidebarScroll: this.onSidebarScroll,
-      onLaneScroll: this.onLaneScroll,
       gutterHeaderStyle: {
         position: 'sticky',
         top: 0,
@@ -2403,14 +2419,39 @@ export default class App extends React.Component {
       rulerStyle: {
         position: 'sticky',
         top: 0,
-        zIndex: 5,
+        // Above the sticky label gutter (z20) so the ruler stays on top when the
+        // lanes scroll vertically underneath it.
+        zIndex: 25,
         height: barSize + 'px',
-        width: contentW + 'px',
+        width: bodyW + 'px',
         background: V ? '#151519' : '#0c0e14',
         borderBottom: '1px solid rgba(255,255,255,.07)',
         display: V ? 'flex' : 'block',
         alignItems: 'stretch',
       },
+      // #87: top-left corner cell of the horizontal ruler — a sticky-left cover
+      // over the gutter column holding the "Tracks" caption + add-track button.
+      // Sits above everything (z30).
+      rulerCornerStyle: {
+        position: 'sticky',
+        left: 0,
+        top: 0,
+        zIndex: 30,
+        width: gutterW + 'px',
+        height: barSize + 'px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '0 8px',
+        boxSizing: 'border-box',
+        background: '#151519',
+        borderRight: '1px solid rgba(255,255,255,.08)',
+        borderBottom: '1px solid rgba(255,255,255,.08)',
+      },
+      labelGutterStyle,
+      bodyOuterStyle,
+      labelGutterW: gutterW,
+      labelsHidden,
       contentRef: this.contentRef,
       scrollRef: this.scrollRef,
       // Wrapper for the timeline's scroll pane. In HORIZONTAL mode the time axis
@@ -2569,7 +2610,10 @@ export default class App extends React.Component {
         <Header {...vals} />
         <div style={{ position: 'relative', flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
           <div ref={vals.boardRef} style={boardWrapStyle}>
-            <Sidebar {...vals} />
+            {/* #87: horizontal mode renders track labels inside the lane body
+                (Timeline's sticky gutter), so the standalone sidebar column is
+                only used for the vertical-mode time ruler. */}
+            {vals.isVertical && <Sidebar {...vals} />}
             <Timeline {...vals} />
           </div>
           {panelTask && (
