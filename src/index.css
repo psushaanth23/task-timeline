@@ -192,6 +192,45 @@ select,
   box-shadow: 0 0 5px rgba(94, 234, 212, 0.9);
 }
 
+/* Track divider dot handles (#75). Both sit near the label edge of a lane
+   boundary. The add-dot is subtle until hovered; the delete-dot glows teal
+   (matching the divider line) and turns red on hover to signal removal. The
+   centering transform lives inline, so :hover only touches color/opacity. */
+.divider-add-dot {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(94, 234, 212, 0.5);
+  background: rgba(94, 234, 212, 0.14);
+  opacity: 0.3;
+  cursor: pointer;
+  transition: opacity 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+.divider-add-dot:hover {
+  opacity: 1;
+  background: rgba(94, 234, 212, 0.4);
+  box-shadow: 0 0 9px rgba(94, 234, 212, 0.7);
+}
+.divider-del-dot {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(94, 234, 212, 0.75);
+  background: rgba(94, 234, 212, 0.5);
+  box-shadow: 0 0 8px rgba(94, 234, 212, 0.5);
+  opacity: 0.9;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+}
+.divider-del-dot:hover {
+  opacity: 1;
+  background: rgba(255, 92, 124, 0.85);
+  border-color: rgba(255, 92, 124, 0.9);
+  box-shadow: 0 0 11px rgba(255, 92, 124, 0.7);
+}
+
 /* Task detail drawer: slides in from the right edge. */
 @keyframes panelSlideIn {
   from {

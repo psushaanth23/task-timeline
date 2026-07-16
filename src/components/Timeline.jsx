@@ -24,6 +24,8 @@ export default function Timeline(props) {
     onBoardMouseDown,
     lanesStyle,
     laneRows,
+    dividers = [],
+    dividerAdds = [],
     gridOverlayStyle,
     svgWidthNum,
     svgHeightNum,
@@ -294,6 +296,46 @@ export default function Timeline(props) {
           <div key={i} style={row.style} />
         ))}
         <div style={gridOverlayStyle} />
+        {/* Track dividers (#75): calm glowing separators between lanes. The line
+            is decorative (pointer-events:none); the small dot handle near the
+            label edge adds (empty gap) or removes (existing divider) one.
+            stopPropagation + data-no-drag keep board gestures untouched. */}
+        {dividerAdds.map((a) => (
+          <button
+            key={a.key}
+            type="button"
+            className="divider-add-dot"
+            data-no-drag="true"
+            title="Add divider"
+            aria-label="Add track divider"
+            style={a.dotStyle}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onClick={a.onAdd}
+          />
+        ))}
+        {dividers.map((d) => (
+          <React.Fragment key={d.id}>
+            <div style={d.lineStyle} />
+            <button
+              type="button"
+              className="divider-del-dot"
+              data-no-drag="true"
+              title="Remove divider"
+              aria-label="Remove track divider"
+              style={d.dotStyle}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onClick={d.onRemove}
+            />
+          </React.Fragment>
+        ))}
         <svg
           width={svgWidthNum}
           height={svgHeightNum}

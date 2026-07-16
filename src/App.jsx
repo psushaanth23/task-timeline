@@ -76,6 +76,10 @@ export default class App extends React.Component {
       route: App.routeFromHash(),
       wiring: null,
       pendingConnect: null,
+      // Visual separators between adjacent lanes. Each is { id, afterTrackId }
+      // ("sits after the lane whose track id is afterTrackId"), so it survives
+      // reorder/rename; anchors to removed/archived tracks are dropped on load.
+      dividers: [],
       // Id of the task whose detail panel (Markdown notes) is open, or null.
       panelTaskId: null,
       // Width (px) of the right-docked detail panel; user-resizable + persisted.
@@ -202,14 +206,23 @@ export default class App extends React.Component {
     });
   }
 
+  // Keep only dividers whose anchor track still exists on the active board.
+  normalizeDividers(raw, tracks) {
+    const ids = new Set((tracks || []).map((t) => t.id));
+    return (Array.isArray(raw) ? raw : []).filter(
+      (d) => d && typeof d.afterTrackId === 'string' && ids.has(d.afterTrackId),
+    );
+  }
+
   // Write the local (localStorage) cache in the absolute persist form.
-  saveLocal(tasks, tracks, tags, deleted) {
+  saveLocal(tasks, tracks, tags, deleted, dividers) {
     saveData(
       this.serializeTasks(tasks, this.state.originMs),
       tracks,
       this.state.originMs,
       tags ?? this.state.tags,
       this.serializeDeleted(deleted ?? this.state.deletedTracks, this.state.originMs),
+      dividers ?? this.state.dividers,
     );
   }
 
@@ -224,6 +237,7 @@ export default class App extends React.Component {
         tracks: tr,
         tags: this.normalizeTags(s),
         deletedTracks: this.hydrateDeleted(s.deletedTracks, originMs),
+        dividers: this.normalizeDividers(s.dividers, tr),
         originMs,
         nowMin: minutesSince(originMs),
       });
@@ -270,6 +284,7 @@ export default class App extends React.Component {
       tracks: this.state.tracks,
       tags: this.state.tags,
       deletedTracks: this.serializeDeleted(this.state.deletedTracks, this.state.originMs),
+      dividers: this.state.dividers,
       origin: this.state.originMs,
       view: this.currentView(),
     };
@@ -310,6 +325,7 @@ export default class App extends React.Component {
           tracks: tr,
           tags: this.normalizeTags(disk),
           deletedTracks: this.hydrateDeleted(disk.deletedTracks, originMs),
+          dividers: this.normalizeDividers(disk.dividers, tr),
           originMs,
           nowMin: minutesSince(originMs),
           orientation: view.orientation || this.state.orientation,
@@ -351,11 +367,12 @@ export default class App extends React.Component {
     document.removeEventListener('mouseup', this.onSidebarResizeUp);
   }
 
-  persist(tasks, tracks, tags, deleted) {
+  persist(tasks, tracks, tags, deleted, dividers) {
     const t = tasks || this.state.tasks;
     const tr = tracks || this.state.tracks;
     const tg = tags || this.state.tags;
     const del = deleted || this.state.deletedTracks;
+    const dv = dividers || this.state.dividers;
     // Snapshot the pre-change state for undo (arrays are always replaced
     // immutably, so holding references is safe).
     this.undoStack.push({
@@ -363,11 +380,12 @@ export default class App extends React.Component {
       tracks: this.state.tracks,
       tags: this.state.tags,
       deletedTracks: this.state.deletedTracks,
+      dividers: this.state.dividers,
     });
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
-    this.saveLocal(t, tr, tg, del);
-    this.setState({ tasks: t, tracks: tr, tags: tg, deletedTracks: del });
+    this.saveLocal(t, tr, tg, del, dv);
+    this.setState({ tasks: t, tracks: tr, tags: tg, deletedTracks: del, dividers: dv });
     this.syncDisk();
   }
 
@@ -379,16 +397,19 @@ export default class App extends React.Component {
       tracks: this.state.tracks,
       tags: this.state.tags,
       deletedTracks: this.state.deletedTracks,
+      dividers: this.state.dividers,
     });
     const prevTags = prev.tags ?? this.state.tags;
     const prevDeleted = prev.deletedTracks ?? this.state.deletedTracks;
-    this.saveLocal(prev.tasks, prev.tracks, prevTags, prevDeleted);
+    const prevDividers = prev.dividers ?? this.state.dividers;
+    this.saveLocal(prev.tasks, prev.tracks, prevTags, prevDeleted, prevDividers);
     const liveIds = new Set(prev.tasks.map((t) => t.id));
     this.setState({
       tasks: prev.tasks,
       tracks: prev.tracks,
       tags: prevTags,
       deletedTracks: prevDeleted,
+      dividers: prevDividers,
       selection: this.state.selection.filter((id) => liveIds.has(id)),
     });
     this.syncDisk();
@@ -402,16 +423,19 @@ export default class App extends React.Component {
       tracks: this.state.tracks,
       tags: this.state.tags,
       deletedTracks: this.state.deletedTracks,
+      dividers: this.state.dividers,
     });
     const nextTags = next.tags ?? this.state.tags;
     const nextDeleted = next.deletedTracks ?? this.state.deletedTracks;
-    this.saveLocal(next.tasks, next.tracks, nextTags, nextDeleted);
+    const nextDividers = next.dividers ?? this.state.dividers;
+    this.saveLocal(next.tasks, next.tracks, nextTags, nextDeleted, nextDividers);
     const liveIds = new Set(next.tasks.map((t) => t.id));
     this.setState({
       tasks: next.tasks,
       tracks: next.tracks,
       tags: nextTags,
       deletedTracks: nextDeleted,
+      dividers: nextDividers,
       selection: this.state.selection.filter((id) => liveIds.has(id)),
     });
     this.syncDisk();
@@ -743,8 +767,25 @@ export default class App extends React.Component {
       deletedAt: Date.now(),
     };
     const deletedTracks = [entry, ...this.state.deletedTracks];
+    // Drop any divider anchored to the track that's leaving the board.
+    const dividers = this.state.dividers.filter((d) => d.afterTrackId !== track.id);
     this.setState({ selection: this.state.selection.filter((id) => !removedIds.includes(id)) });
-    this.persist(tasks, tracks, null, deletedTracks);
+    this.persist(tasks, tracks, null, deletedTracks, dividers);
+  }
+
+  // Insert a divider after the lane whose track id is afterTrackId (one per
+  // boundary). Undoable + persisted via the normal persist() path.
+  addDivider(afterTrackId) {
+    if (this.state.dividers.some((d) => d.afterTrackId === afterTrackId)) return;
+    const divider = {
+      id: 'dv' + Date.now() + Math.floor(Math.random() * 9999),
+      afterTrackId,
+    };
+    this.persist(null, null, null, null, [...this.state.dividers, divider]);
+  }
+
+  removeDivider(id) {
+    this.persist(null, null, null, null, this.state.dividers.filter((d) => d.id !== id));
   }
 
   // Bring an archived track back as a new (last) lane with its tasks intact.
@@ -1615,6 +1656,76 @@ export default class App extends React.Component {
       };
     });
 
+    // --- Track dividers (#75) ---------------------------------------------
+    // A divider is anchored to a track id and rendered at that lane's trailing
+    // boundary, in the same scrolling content coord space as lanes/tasks. The
+    // thin glowing line reads below task cards; a small dot handle (higher z)
+    // near the label edge is the click target to add/remove.
+    const trackIndexById = {};
+    this.state.tracks.forEach((tr, i) => (trackIndexById[tr.id] = i));
+    const dividerLineStyle = (cross) =>
+      V
+        ? {
+            position: 'absolute',
+            top: 0,
+            left: cross + 'px',
+            width: '2px',
+            height: timeAxisSize + 'px',
+            transform: 'translateX(-1px)',
+            zIndex: 1,
+            pointerEvents: 'none',
+            background: 'linear-gradient(180deg, rgba(94,234,212,.5), rgba(94,234,212,.24))',
+            boxShadow: '0 0 8px rgba(94,234,212,.35)',
+          }
+        : {
+            position: 'absolute',
+            left: 0,
+            top: cross + 'px',
+            height: '2px',
+            width: timeAxisSize + 'px',
+            transform: 'translateY(-1px)',
+            zIndex: 1,
+            pointerEvents: 'none',
+            background: 'linear-gradient(90deg, rgba(94,234,212,.5), rgba(94,234,212,.24))',
+            boxShadow: '0 0 8px rgba(94,234,212,.35)',
+          };
+    const dividerDotStyle = (cross) =>
+      V
+        ? { position: 'absolute', left: cross + 'px', top: '7px', transform: 'translate(-50%, 0)', zIndex: 5 }
+        : { position: 'absolute', top: cross + 'px', left: '7px', transform: 'translate(0, -50%)', zIndex: 5 };
+
+    const usedBoundaries = new Set();
+    const dividers = [];
+    this.state.dividers.forEach((d) => {
+      const idx = trackIndexById[d.afterTrackId];
+      if (idx == null) return; // anchor track archived/removed → skip gracefully
+      usedBoundaries.add(idx);
+      const cross = (idx + 1) * laneSize;
+      dividers.push({
+        id: d.id,
+        lineStyle: dividerLineStyle(cross),
+        dotStyle: dividerDotStyle(cross),
+        onRemove: (e) => {
+          e.stopPropagation();
+          this.removeDivider(d.id);
+        },
+      });
+    });
+
+    const dividerAdds = [];
+    for (let i = 0; i < laneCount - 1; i++) {
+      if (usedBoundaries.has(i)) continue;
+      const afterTrackId = this.trackFor(i).id;
+      dividerAdds.push({
+        key: 'add' + i,
+        dotStyle: dividerDotStyle((i + 1) * laneSize),
+        onAdd: (e) => {
+          e.stopPropagation();
+          this.addDivider(afterTrackId);
+        },
+      });
+    }
+
     const hourTicks = Array.from({ length: 49 }, (_, h) => ({
       label: fmtHour(h, this.props.timeFormat),
       style: {
@@ -2171,6 +2282,8 @@ export default class App extends React.Component {
       },
       lanes,
       laneRows,
+      dividers,
+      dividerAdds,
       hourTicks,
       hourTicksV,
       dayBands,
