@@ -137,6 +137,8 @@ export default function DetailPanel({
   onRename,
   onToggleDone,
   onSaveNotes,
+  todoSnapshots,
+  onToggleTodo,
 }) {
   const [editingName, setEditingName] = React.useState(false);
   const [draft, setDraft] = React.useState('');
@@ -266,7 +268,12 @@ export default function DetailPanel({
       </div>
       <div style={bodyStyle}>
         <div style={sectionLabelStyle}>NOTES</div>
-        <MarkdownNotes value={task.notes || ''} onSave={onSaveNotes} />
+        <MarkdownNotes
+          value={task.notes || ''}
+          onSave={onSaveNotes}
+          todoSnapshots={task.todoSnapshots}
+          onToggleTodo={onToggleTodo}
+        />
       </div>
     </aside>
   );

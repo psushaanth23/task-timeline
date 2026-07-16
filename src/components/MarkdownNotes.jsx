@@ -16,22 +16,130 @@ const mdComponents = {
   a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
 };
 
-// Read-only rendered Markdown, shared by the notes viewer and the archive page
-// (#88) so both use the exact same pipeline: remark-gfm (GFM tables/checklists),
+// Rendered Markdown, shared by the notes viewer and the archive page (#88) so
+// both use the exact same pipeline: remark-gfm (GFM tables/checklists),
 // rehype-highlight (code syntax highlighting), the safe-by-default component
-// overrides, the `.md-body` theme styles, and pasted-image URLs. No editing.
-export function MarkdownView({ value }) {
+// overrides, the `.md-body` theme styles, and pasted-image URLs.
+//
+// #90: when `onToggleTask` is supplied (the LIVE notes preview only) the GFM
+// task-list checkboxes render INTERACTIVE — enabled + controlled — and clicking
+// one calls onToggleTask(ordinal), where ordinal is the checkbox's position
+// among all checkboxes in document order (which matches source task-line order).
+// Without it (archive read-only) the checkboxes stay disabled, exactly as before.
+export function MarkdownView({ value, onToggleTask }) {
+  const interactive = typeof onToggleTask === 'function';
+  const components = React.useMemo(() => {
+    if (!interactive) return mdComponents;
+    return {
+      ...mdComponents,
+      input: ({ node, ...props }) => {
+        if (props.type === 'checkbox') {
+          return (
+            <input
+              type="checkbox"
+              className="md-task-checkbox"
+              checked={!!props.checked}
+              onMouseDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                const box = e.target;
+                const root = box.closest('.md-body');
+                const all = root ? Array.from(root.querySelectorAll('input[type="checkbox"]')) : [];
+                const idx = all.indexOf(box);
+                if (idx >= 0) onToggleTask(idx);
+              }}
+            />
+          );
+        }
+        return <input {...props} />;
+      },
+    };
+  }, [interactive, onToggleTask]);
   return (
-    <div className="md-body">
+    <div className={interactive ? 'md-body md-interactive' : 'md-body'}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
-        components={mdComponents}
+        components={components}
       >
         {value}
       </ReactMarkdown>
     </div>
   );
+}
+
+// #90: GFM task-list line matcher — indent, bullet, checkbox, trailing text.
+const TASK_LINE_RE = /^(\s*)([-*+])(\s+)\[([ xX])\](\s?)(.*)$/;
+
+const setLineChecked = (line, checked) =>
+  line.replace(TASK_LINE_RE, (_full, ind, mk, sp, _box, sp2, rest) =>
+    ind + mk + sp + '[' + (checked ? 'x' : ' ') + ']' + sp2 + rest,
+  );
+
+// Parse a note's markdown into an ordered list of task-list items with a
+// stable-ish identity (indent + ancestor-path + own text) so restore snapshots
+// survive reload and small edits. Indentation (leading whitespace, tabs→2sp)
+// drives nesting. Items are in source order == the DOM checkbox order.
+function parseTaskItems(md) {
+  const lines = (md || '').split('\n');
+  const items = [];
+  const stack = []; // ancestor items: { indent, text }
+  lines.forEach((line, idx) => {
+    const m = line.match(TASK_LINE_RE);
+    if (!m) return;
+    const indent = m[1].replace(/\t/g, '  ').length;
+    const checked = m[4].toLowerCase() === 'x';
+    const text = m[6].trim();
+    while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
+    const key = indent + '::' + stack.map((s) => s.text).concat(text).join(' \u203a ');
+    items.push({ idx, indent, depth: Math.floor(indent / 2), checked, text, key });
+    stack.push({ indent, text });
+  });
+  return { lines, items };
+}
+
+// #90: toggle the ordinal-th task-list checkbox in a note's markdown, applying
+// the cascade (checking a parent checks all deeper descendants) and restore
+// (unchecking a parent restores descendants to the snapshot captured right
+// before it cascade-checked them). The markdown text is the single source of
+// truth for checked state; `snapshots` is an auxiliary map keyed by parent
+// identity. Pure + exported for testing. Returns { value, snapshots }.
+export function toggleTaskByOrdinal(md, ordinal, snapshots) {
+  const snaps = { ...(snapshots || {}) };
+  const { lines, items } = parseTaskItems(md);
+  if (ordinal < 0 || ordinal >= items.length) return { value: md || '', snapshots: snaps };
+  const parent = items[ordinal];
+  // Contiguous descendants = subsequent items more deeply indented than parent.
+  const descendants = [];
+  for (let i = ordinal + 1; i < items.length; i++) {
+    if (items[i].indent > parent.indent) descendants.push(items[i]);
+    else break;
+  }
+  const next = lines.slice();
+  if (!parent.checked) {
+    // Checking: snapshot descendants' current states, then cascade-check all.
+    if (descendants.length) {
+      snaps[parent.key] = descendants.map((d) => ({ key: d.key, checked: d.checked }));
+    }
+    next[parent.idx] = setLineChecked(lines[parent.idx], true);
+    descendants.forEach((d) => {
+      next[d.idx] = setLineChecked(lines[d.idx], true);
+    });
+  } else {
+    // Unchecking: uncheck the parent; restore descendants from the snapshot when
+    // it still matches the structure (per-key lookup), else leave them as-is —
+    // a graceful fallback that never crashes or corrupts the note.
+    next[parent.idx] = setLineChecked(lines[parent.idx], false);
+    const snap = snaps[parent.key];
+    if (snap && descendants.length) {
+      const byKey = new Map(snap.map((s) => [s.key, s.checked]));
+      descendants.forEach((d) => {
+        if (byKey.has(d.key)) next[d.idx] = setLineChecked(lines[d.idx], byKey.get(d.key));
+      });
+    }
+    delete snaps[parent.key];
+  }
+  return { value: next.join('\n'), snapshots: snaps };
 }
 
 // #86: Markdown bullet auto-continue. Given the textarea's value + collapsed
@@ -115,11 +223,24 @@ const uploadingStyle = {
 // Rendered Markdown by default; double-click to edit the raw Markdown in a
 // textarea. Blur or ⌘/Ctrl+Enter commits (re-renders); Escape cancels. Empty
 // notes show a subtle "double-click to add" placeholder.
-export default function MarkdownNotes({ value, onSave }) {
+export default function MarkdownNotes({ value, onSave, todoSnapshots, onToggleTodo }) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(value || '');
   const [uploading, setUploading] = React.useState(false);
   const taRef = React.useRef(null);
+
+  // #90: flip the clicked task-list checkbox in the note text (with cascade +
+  // restore) and persist. Prefers onToggleTodo (saves text + snapshots); falls
+  // back to onSave (text only) if a snapshot sink wasn't provided.
+  const handleToggleTask = React.useCallback(
+    (ordinal) => {
+      const res = toggleTaskByOrdinal(value || '', ordinal, todoSnapshots || {});
+      if (res.value === (value || '')) return;
+      if (onToggleTodo) onToggleTodo(res.value, res.snapshots);
+      else onSave(res.value);
+    },
+    [value, todoSnapshots, onToggleTodo, onSave],
+  );
 
   // Sync in from outside (e.g. panel switched to another task) while not editing.
   React.useEffect(() => {
@@ -276,7 +397,7 @@ export default function MarkdownNotes({ value, onSave }) {
       {empty ? (
         <div style={placeholderStyle}>No notes yet — double-click to add Markdown notes.</div>
       ) : (
-        <MarkdownView value={value} />
+        <MarkdownView value={value} onToggleTask={handleToggleTask} />
       )}
     </div>
   );

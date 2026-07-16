@@ -1474,6 +1474,18 @@ export default class App extends React.Component {
     this.persist(tasks);
   }
 
+  // #90: persist an interactive to-do checkbox toggle — the rewritten note text
+  // plus the restore snapshots (kept alongside the task, so they survive reload
+  // via the same serialize/hydrate spread). Undoable through persist().
+  setTaskTodo(id, notes, todoSnapshots) {
+    const cur = this.state.tasks.find((t) => t.id === id);
+    if (!cur) return;
+    const tasks = this.state.tasks.map((t) =>
+      t.id === id ? { ...t, notes, todoSnapshots } : t,
+    );
+    this.persist(tasks);
+  }
+
   closePanel() {
     if (this.state.panelTaskId) this.setState({ panelTaskId: null });
   }
@@ -2694,6 +2706,8 @@ export default class App extends React.Component {
               onRename={(id, title) => this.setTaskTitle(id, title)}
               onToggleDone={() => this.toggleDone(panelTask)}
               onSaveNotes={(notes) => this.setTaskNotes(panelTask.id, notes)}
+              todoSnapshots={panelTask.todoSnapshots}
+              onToggleTodo={(notes, snaps) => this.setTaskTodo(panelTask.id, notes, snaps)}
             />
           )}
         </div>

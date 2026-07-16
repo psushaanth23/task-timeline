@@ -408,3 +408,18 @@ select,
 .md-body input[type='checkbox'] {
   margin-right: 6px;
 }
+
+/* #90: interactive to-do checkboxes in the live notes preview. Teal accent to
+   match the theme; clickable cursor. The read-only archive preview keeps the
+   default disabled checkboxes. */
+.md-body.md-interactive input[type='checkbox'].md-task-checkbox {
+  cursor: pointer;
+  accent-color: #5eead4;
+  width: 13px;
+  height: 13px;
+  vertical-align: -1px;
+}
+.md-body.md-interactive li.task-list-item {
+  list-style: none;
+  margin-left: -18px;
+}
