@@ -6,6 +6,7 @@ import { PALETTE, LAYOUT, genTrackId, genTagId, makeTracks, seedTasks } from './
 import TagPicker from './components/TagPicker.jsx';
 import ArchivePage from './components/ArchivePage.jsx';
 import TagManagerPage from './components/TagManagerPage.jsx';
+import TagTasksPage from './components/TagTasksPage.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
 import { fmt, fmtHour, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
@@ -74,6 +75,7 @@ export default class App extends React.Component {
       // viewable/restorable from the #/archive page.
       deletedTracks: [],
       route: App.routeFromHash(),
+      routeTagId: App.parseHash().tagId,
       wiring: null,
       pendingConnect: null,
       // Visual separators between adjacent lanes. Each is { id, afterTrackId }
@@ -714,17 +716,25 @@ export default class App extends React.Component {
   }
 
   // Hash-based routing (dependency-free, no react-router): '#/archive' -> the
-  // Deleted Tracks page, '#/tags' -> the Tag Manager, anything else -> timeline.
-  static routeFromHash() {
-    if (typeof window === 'undefined') return 'timeline';
+  // Deleted Tracks page, '#/tags' -> the Tag Manager, '#/tag/<id>' -> the
+  // tasks-by-tag page (id captured separately), anything else -> timeline.
+  static parseHash() {
+    if (typeof window === 'undefined') return { name: 'timeline', tagId: null };
     const h = window.location.hash;
-    if (h === '#/archive') return 'archive';
-    if (h === '#/tags') return 'tags';
-    return 'timeline';
+    if (h === '#/archive') return { name: 'archive', tagId: null };
+    if (h === '#/tags') return { name: 'tags', tagId: null };
+    const m = h.match(/^#\/tag\/(.+)$/);
+    if (m) return { name: 'tag', tagId: decodeURIComponent(m[1]) };
+    return { name: 'timeline', tagId: null };
+  }
+
+  static routeFromHash() {
+    return App.parseHash().name;
   }
 
   onHashChange() {
-    this.setState({ route: App.routeFromHash() });
+    const r = App.parseHash();
+    this.setState({ route: r.name, routeTagId: r.tagId });
   }
 
   goArchive() {
@@ -735,6 +745,12 @@ export default class App extends React.Component {
   goTags() {
     window.location.hash = '#/tags';
     this.setState({ route: 'tags' });
+  }
+
+  goTag(tagId) {
+    if (!tagId) return;
+    window.location.hash = '#/tag/' + encodeURIComponent(tagId);
+    this.setState({ route: 'tag', routeTagId: tagId });
   }
 
   goTimeline() {
@@ -1608,6 +1624,7 @@ export default class App extends React.Component {
           e.stopPropagation();
           this.openTagPicker(i, e.currentTarget.getBoundingClientRect());
         },
+        onOpenTag: (tagId) => this.goTag(tagId),
         onRename: (e) => this.commitTrackEdit(i, e.target.innerText),
         onKeyDown: (e) => {
           if (e.key === 'Enter') {
@@ -2377,6 +2394,46 @@ export default class App extends React.Component {
           onRename={(id, label) => this.setTagLabel(id, label)}
           onSetColor={(id, color) => this.setTagColor(id, color)}
           onDelete={(id) => this.deleteTag(id)}
+          onBack={() => this.goTimeline()}
+        />
+      );
+    }
+    if (this.state.route === 'tag') {
+      // Tags live on TRACKS: a task "pertains to" a tag when its track carries
+      // that tag. Build the filtered, time-sorted task rows for the page.
+      const selectedTagId = this.state.routeTagId;
+      const tracks = this.state.tracks;
+      const taggedLanes = new Set();
+      tracks.forEach((tr, i) => {
+        if ((tr.tagIds || []).includes(selectedTagId)) taggedLanes.add(i);
+      });
+      const rows = this.state.tasks
+        .filter((t) => taggedLanes.has(t.lane))
+        .map((t) => {
+          const tr = tracks[t.lane] || {};
+          return {
+            id: t.id,
+            title: t.title,
+            trackName: tr.name || 'Untitled track',
+            trackColor: tr.color || '#8891a5',
+            start: t.start,
+            timeLabel:
+              fmt(t.start, this.props.timeFormat) +
+              ' – ' +
+              fmt(t.start + t.duration, this.props.timeFormat) +
+              ' · ' +
+              durLabel(t.duration),
+            done: !!t.done,
+            hasNotes: !!(t.notes && t.notes.trim()),
+          };
+        })
+        .sort((a, b) => a.start - b.start);
+      return (
+        <TagTasksPage
+          tags={this.state.tags}
+          selectedTagId={selectedTagId}
+          rows={rows}
+          onSelectTag={(id) => this.goTag(id)}
           onBack={() => this.goTimeline()}
         />
       );

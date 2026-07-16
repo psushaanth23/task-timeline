@@ -251,7 +251,7 @@ export default function Timeline(props) {
                     onRename={lane.onRename}
                     onKeyDown={lane.onKeyDown}
                   />
-                  <TrackTags tags={lane.tagList} onAdd={lane.onAddTag} />
+                  <TrackTags tags={lane.tagList} onAdd={lane.onAddTag} onOpenTag={lane.onOpenTag} />
                 </div>
                 <HoverButton
                   onClick={lane.onDelete}

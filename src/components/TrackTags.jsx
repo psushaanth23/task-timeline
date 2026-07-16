@@ -6,7 +6,7 @@ import TagChip from './TagChip.jsx';
 // "+" reveals on row hover (see the .track-row / .tag-add rules in index.css)
 // so no-tag tracks stay clean. Marked data-no-drag so it never starts a track
 // reorder drag or triggers rename.
-export default function TrackTags({ tags, onAdd }) {
+export default function TrackTags({ tags, onAdd, onOpenTag }) {
   const hasTags = tags.length > 0;
   return (
     <div
@@ -21,7 +21,12 @@ export default function TrackTags({ tags, onAdd }) {
       }}
     >
       {tags.map((tag) => (
-        <TagChip key={tag.id} label={tag.label} color={tag.color} />
+        <TagChip
+          key={tag.id}
+          label={tag.label}
+          color={tag.color}
+          onClick={onOpenTag ? () => onOpenTag(tag.id) : undefined}
+        />
       ))}
       <button
         type="button"
