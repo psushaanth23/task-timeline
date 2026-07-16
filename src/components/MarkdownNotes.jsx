@@ -16,6 +16,37 @@ const mdComponents = {
   a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
 };
 
+// #86: Markdown bullet auto-continue. Given the textarea's value + collapsed
+// caret, decide what Enter should do on a bullet line (`-`/`*`):
+//   • non-empty bullet  → insert a newline pre-filled with the SAME indent +
+//     marker + trailing space, so the list continues at the same nesting level.
+//   • empty bullet (just marker + space, no content) → clear the marker and do
+//     NOT add a line, so the user exits the list instead of stacking blanks.
+// Returns { value, caret } to apply, or null to let the default Enter run
+// (normal newline on non-bullet lines). Kept pure + exported for testing.
+export function computeBulletContinuation(value, selStart, selEnd) {
+  // Only auto-continue on a collapsed caret; a range selection means Enter is
+  // replacing text, which should behave normally.
+  if (selStart !== selEnd) return null;
+  const lineStart = value.lastIndexOf('\n', selStart - 1) + 1;
+  const nl = value.indexOf('\n', selStart);
+  const lineEnd = nl === -1 ? value.length : nl;
+  const line = value.slice(lineStart, lineEnd);
+  const m = line.match(/^([ \t]*)([-*])([ \t]+)(.*)$/);
+  if (!m) return null;
+  const [, indent, marker, spacing, content] = m;
+  if (content.trim() === '') {
+    // Empty bullet: remove the marker (from line start up to the caret) and add
+    // no newline — this exits the list.
+    const next = value.slice(0, lineStart) + value.slice(selStart);
+    return { value: next, caret: lineStart };
+  }
+  // Continue the list: new line with the same indent + marker + spacing.
+  const prefix = '\n' + indent + marker + spacing;
+  const next = value.slice(0, selStart) + prefix + value.slice(selEnd);
+  return { value: next, caret: selStart + prefix.length };
+}
+
 const textareaStyle = {
   width: '100%',
   flex: 1,
@@ -187,6 +218,30 @@ export default function MarkdownNotes({ value, onSave }) {
             } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
               e.preventDefault();
               commit();
+            } else if (
+              e.key === 'Enter' &&
+              !e.shiftKey &&
+              !e.metaKey &&
+              !e.ctrlKey &&
+              !e.altKey
+            ) {
+              // Bullet auto-continue (#86). Only intercepts when the caret sits
+              // on a bullet line; otherwise falls through to a normal newline
+              // (which the controlled onChange applies), so plain typing, text
+              // paste and the image paste/drop from #74 are all unaffected.
+              const el = e.currentTarget;
+              const res = computeBulletContinuation(el.value, el.selectionStart, el.selectionEnd);
+              if (res) {
+                e.preventDefault();
+                setDraft(res.value);
+                requestAnimationFrame(() => {
+                  const ta = taRef.current;
+                  if (ta) {
+                    ta.focus();
+                    ta.setSelectionRange(res.caret, res.caret);
+                  }
+                });
+              }
             }
           }}
           placeholder="Write notes in Markdown…  paste/drop images · ⌘/Ctrl+Enter to save · Esc to cancel"
