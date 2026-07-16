@@ -178,18 +178,8 @@ select,
   opacity: 1;
   color: #5eead4;
   background: rgba(94, 234, 212, 0.18);
-  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.35) inset;
-}
-.task-note-btn.has-notes::after {
-  content: '';
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #5eead4;
-  box-shadow: 0 0 5px rgba(94, 234, 212, 0.9);
+  /* Glow-only cue (#73 revision): teal tint + soft outer glow, no dot badge. */
+  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.35) inset, 0 0 7px rgba(94, 234, 212, 0.55);
 }
 
 /* Track divider dot handles (#75). Both sit near the label edge of a lane
