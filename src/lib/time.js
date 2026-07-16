@@ -51,6 +51,17 @@ export function fmtHour(h, timeFormat = '12h') {
   return hh + ' ' + ap;
 }
 
+// Human-readable date + time for an absolute epoch (e.g. a completedAt stamp),
+// like "Jul 16, 3:44 PM". Returns null for missing/invalid input so callers can
+// degrade gracefully. Reuses fmt() for the time-of-day portion.
+export function fmtDateTime(ms, timeFormat = '12h') {
+  if (ms == null || !isFinite(ms)) return null;
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return null;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return months[d.getMonth()] + ' ' + d.getDate() + ', ' + fmt(d.getHours() * 60 + d.getMinutes(), timeFormat);
+}
+
 export function durLabel(d) {
   if (d < 60) return d + 'm';
   const h = d / 60;

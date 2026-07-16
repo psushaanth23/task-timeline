@@ -8,7 +8,7 @@ import ArchivePage from './components/ArchivePage.jsx';
 import TagManagerPage from './components/TagManagerPage.jsx';
 import TagTasksPage from './components/TagTasksPage.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
-import { fmt, fmtHour, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
+import { fmt, fmtHour, fmtDateTime, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
 import { loadData, saveData, loadView, saveView } from './lib/storage.js';
@@ -1417,7 +1417,13 @@ export default class App extends React.Component {
   }
 
   toggleDone(task) {
-    const tasks = this.state.tasks.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t));
+    // Record when a task is completed (and clear it on reopen). Stays inside the
+    // persist() path so completedAt saves to disk/localStorage and is undoable.
+    const tasks = this.state.tasks.map((t) =>
+      t.id === task.id
+        ? { ...t, done: !t.done, completedAt: !t.done ? Date.now() : null }
+        : t,
+    );
     this.setState({ selection: this.state.selection.filter((id) => id !== task.id) });
     this.persist(tasks);
   }
@@ -2411,12 +2417,14 @@ export default class App extends React.Component {
         .filter((t) => taggedLanes.has(t.lane))
         .map((t) => {
           const tr = tracks[t.lane] || {};
+          const completedAt = typeof t.completedAt === 'number' ? t.completedAt : null;
           return {
             id: t.id,
             title: t.title,
             trackName: tr.name || 'Untitled track',
             trackColor: tr.color || '#8891a5',
             start: t.start,
+            startLabel: fmt(t.start, this.props.timeFormat),
             timeLabel:
               fmt(t.start, this.props.timeFormat) +
               ' – ' +
@@ -2424,10 +2432,11 @@ export default class App extends React.Component {
               ' · ' +
               durLabel(t.duration),
             done: !!t.done,
+            completedAt,
+            completedLabel: completedAt != null ? fmtDateTime(completedAt, this.props.timeFormat) : null,
             hasNotes: !!(t.notes && t.notes.trim()),
           };
-        })
-        .sort((a, b) => a.start - b.start);
+        });
       return (
         <TagTasksPage
           tags={this.state.tags}

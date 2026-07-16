@@ -4,13 +4,192 @@ import TagChip from './TagChip.jsx';
 
 // Tasks-by-tag page (hash route #/tag/<tagId>). Tags live on TRACKS, so the
 // rows are every task whose track carries the selected tag (computed in App).
-// A tag rail across the top switches the active tag (updates the hash route);
-// the main list shows each task with its track accent, time span, done state
-// and a has-notes hint. On-theme dark glass, matching TagManagerPage/ArchivePage.
+// Presented as two vertical timelines: In progress first, then Completed —
+// each newest-first. A tag rail across the top switches the active tag.
+
+function TimelineItem({ row, last }) {
+  const done = row.done;
+  const marker = done ? (row.completedLabel || 'completed') : row.startLabel;
+  const accent = row.trackColor;
+  return (
+    <div style={{ position: 'relative', display: 'flex', gap: '16px', paddingBottom: last ? 0 : '16px' }}>
+      {/* Spine + node marker */}
+      <div style={{ position: 'relative', flex: 'none', width: '14px', display: 'flex', justifyContent: 'center' }}>
+        {!last && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '14px',
+              bottom: '-2px',
+              width: '2px',
+              background: 'linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.05))',
+            }}
+          />
+        )}
+        <div
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            marginTop: '4px',
+            width: '12px',
+            height: '12px',
+            borderRadius: '50%',
+            background: done ? 'rgba(18,20,28,0.9)' : accent,
+            border: '2px solid ' + accent,
+            boxShadow: done ? 'none' : '0 0 9px ' + hexToRgba(accent, 0.6),
+          }}
+        />
+      </div>
+
+      {/* Card */}
+      <div style={{ flex: '1 1 auto', minWidth: 0, paddingBottom: '2px' }}>
+        <div
+          style={{
+            fontSize: '11px',
+            color: done ? 'rgba(231,233,238,.45)' : hexToRgba(accent, 0.95),
+            fontFamily: "'JetBrains Mono',monospace",
+            marginBottom: '4px',
+          }}
+        >
+          {done ? 'Completed · ' + marker : marker}
+        </div>
+        <div
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '13px',
+            padding: '11px 14px 11px 18px',
+            background: done ? 'rgba(12,14,20,0.5)' : 'rgba(18,20,28,0.62)',
+            backdropFilter: 'blur(12px) saturate(150%)',
+            WebkitBackdropFilter: 'blur(12px) saturate(150%)',
+            border: '1px solid rgba(255,255,255,.09)',
+            borderRadius: '12px',
+            opacity: done ? 0.62 : 1,
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: '15%',
+              bottom: '15%',
+              width: '4px',
+              borderRadius: '0 3px 3px 0',
+              background: accent,
+              boxShadow: '0 0 12px ' + hexToRgba(accent, 0.47),
+            }}
+          />
+          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: '14px',
+                fontWeight: 600,
+                color: '#e7e9ee',
+                textDecoration: done ? 'line-through' : 'none',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={row.title}
+            >
+              {row.title || 'Untitled task'}
+            </div>
+            <div style={{ marginTop: '4px', fontSize: '12px', color: 'rgba(231,233,238,.55)', fontFamily: "'JetBrains Mono',monospace" }}>
+              {row.timeLabel}
+            </div>
+          </div>
+          <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {row.hasNotes && (
+              <span
+                title="Has notes"
+                aria-label="Has notes"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '6px',
+                  color: '#5eead4',
+                  background: 'rgba(94,234,212,.16)',
+                  boxShadow: '0 0 7px rgba(94,234,212,.45)',
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M4 5h16M4 10h16M4 15h10" />
+                </svg>
+              </span>
+            )}
+            {done && (
+              <span
+                style={{
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                  letterSpacing: '.08em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(231,233,238,.55)',
+                  border: '1px solid rgba(255,255,255,.18)',
+                  borderRadius: '999px',
+                  padding: '2px 8px',
+                  fontFamily: "'JetBrains Mono',monospace",
+                }}
+              >
+                Done
+              </span>
+            )}
+            <TagChip label={row.trackName} color={row.trackColor} title={'Track: ' + row.trackName} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, count, rows }) {
+  if (!rows.length) return null;
+  return (
+    <div style={{ marginTop: '22px' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '9px',
+          fontSize: '12px',
+          fontWeight: 700,
+          letterSpacing: '.1em',
+          textTransform: 'uppercase',
+          color: 'rgba(231,233,238,.6)',
+          fontFamily: "'JetBrains Mono',monospace",
+          marginBottom: '14px',
+        }}
+      >
+        {title}
+        <span style={{ color: 'rgba(231,233,238,.35)' }}>({count})</span>
+      </div>
+      {rows.map((r, i) => (
+        <TimelineItem key={r.id} row={r} last={i === rows.length - 1} />
+      ))}
+    </div>
+  );
+}
+
 export default function TagTasksPage({ tags, selectedTagId, rows, onSelectTag, onBack }) {
   const list = Array.isArray(tags) ? tags : [];
   const selected = list.find((t) => t.id === selectedTagId) || null;
   const accent = selected ? selected.color : '#7dd3fc';
+
+  // Ordering (#77): incomplete first, then completed — both newest-first.
+  const all = Array.isArray(rows) ? rows : [];
+  const incomplete = all.filter((r) => !r.done).sort((a, b) => b.start - a.start);
+  const completed = all.filter((r) => r.done).sort((a, b) => {
+    const ac = a.completedAt;
+    const bc = b.completedAt;
+    if (ac != null && bc != null) return bc - ac; // most recently finished first
+    if (ac != null) return -1;
+    if (bc != null) return 1;
+    return b.start - a.start; // fall back to start time when no completedAt
+  });
 
   const pageStyle = {
     position: 'absolute',
@@ -82,8 +261,6 @@ export default function TagTasksPage({ tags, selectedTagId, rows, onSelectTag, o
     );
   });
 
-  const doneCount = rows.filter((r) => r.done).length;
-
   return (
     <div style={pageStyle}>
       <div style={innerStyle}>
@@ -111,15 +288,15 @@ export default function TagTasksPage({ tags, selectedTagId, rows, onSelectTag, o
         </h1>
         <p style={{ margin: 0, fontSize: '13px', color: 'rgba(231,233,238,.5)', fontFamily: "'JetBrains Mono',monospace" }}>
           {selected
-            ? rows.length + ' task' + (rows.length === 1 ? '' : 's') +
+            ? all.length + ' task' + (all.length === 1 ? '' : 's') +
               ' on tracks tagged “' + selected.label + '”' +
-              (doneCount ? ' · ' + doneCount + ' done' : '')
+              (completed.length ? ' · ' + completed.length + ' done' : '')
             : 'Tag not found'}
         </p>
 
         {list.length > 0 && <div style={railStyle}>{rail}</div>}
 
-        {rows.length === 0 ? (
+        {all.length === 0 ? (
           <div
             style={{
               marginTop: '20px',
@@ -139,105 +316,10 @@ export default function TagTasksPage({ tags, selectedTagId, rows, onSelectTag, o
             </div>
           </div>
         ) : (
-          rows.map((r) => (
-            <div
-              key={r.id}
-              style={{
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '14px',
-                padding: '13px 16px 13px 22px',
-                marginTop: '11px',
-                background: r.done ? 'rgba(12,14,20,0.55)' : 'rgba(18,20,28,0.62)',
-                backdropFilter: 'blur(12px) saturate(150%)',
-                WebkitBackdropFilter: 'blur(12px) saturate(150%)',
-                border: '1px solid rgba(255,255,255,.09)',
-                borderRadius: '13px',
-                opacity: r.done ? 0.62 : 1,
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: '14%',
-                  bottom: '14%',
-                  width: '4px',
-                  borderRadius: '0 3px 3px 0',
-                  background: r.trackColor,
-                  boxShadow: '0 0 12px ' + hexToRgba(r.trackColor, 0.47),
-                }}
-              />
-              <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: '14.5px',
-                    fontWeight: 600,
-                    color: '#e7e9ee',
-                    textDecoration: r.done ? 'line-through' : 'none',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                  title={r.title}
-                >
-                  {r.title || 'Untitled task'}
-                </div>
-                <div
-                  style={{
-                    marginTop: '5px',
-                    fontSize: '12px',
-                    color: 'rgba(231,233,238,.55)',
-                    fontFamily: "'JetBrains Mono',monospace",
-                  }}
-                >
-                  {r.timeLabel}
-                </div>
-              </div>
-              <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: '9px' }}>
-                {r.hasNotes && (
-                  <span
-                    title="Has notes"
-                    aria-label="Has notes"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '22px',
-                      height: '22px',
-                      borderRadius: '6px',
-                      color: '#5eead4',
-                      background: 'rgba(94,234,212,.16)',
-                      boxShadow: '0 0 7px rgba(94,234,212,.45)',
-                    }}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M4 5h16M4 10h16M4 15h10" />
-                    </svg>
-                  </span>
-                )}
-                {r.done && (
-                  <span
-                    style={{
-                      fontSize: '10.5px',
-                      fontWeight: 700,
-                      letterSpacing: '.08em',
-                      textTransform: 'uppercase',
-                      color: 'rgba(231,233,238,.55)',
-                      border: '1px solid rgba(255,255,255,.18)',
-                      borderRadius: '999px',
-                      padding: '2px 8px',
-                      fontFamily: "'JetBrains Mono',monospace",
-                    }}
-                  >
-                    Done
-                  </span>
-                )}
-                <TagChip label={r.trackName} color={r.trackColor} title={'Track: ' + r.trackName} />
-              </div>
-            </div>
-          ))
+          <>
+            <Section title="In progress" count={incomplete.length} rows={incomplete} />
+            <Section title="Completed" count={completed.length} rows={completed} />
+          </>
         )}
       </div>
     </div>
