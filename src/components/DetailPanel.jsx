@@ -1,12 +1,11 @@
 import React from 'react';
 import MarkdownNotes from './MarkdownNotes.jsx';
 
-const panelStyle = {
+const panelStyleBase = {
   position: 'absolute',
   top: 0,
   right: 0,
   bottom: 0,
-  width: 'min(410px, 92%)',
   display: 'flex',
   flexDirection: 'column',
   zIndex: 30,
@@ -17,6 +16,20 @@ const panelStyle = {
   borderLeft: '1px solid rgba(120,200,220,.22)',
   boxShadow: '-18px 0 46px rgba(0,0,0,.5)',
   animation: 'panelSlideIn .22s ease-out',
+};
+
+// Draggable resize handle on the panel's inner (left) edge.
+const resizeHandleStyle = {
+  position: 'absolute',
+  top: 0,
+  left: '-3px',
+  bottom: 0,
+  width: '8px',
+  cursor: 'col-resize',
+  zIndex: 31,
+  // Thin accent line centered in the hit area, brightening on hover.
+  background:
+    'linear-gradient(90deg, transparent 0, transparent 2px, rgba(120,200,220,.28) 2px, rgba(120,200,220,.28) 4px, transparent 4px)',
 };
 
 const headerStyle = {
@@ -80,7 +93,15 @@ const sectionLabelStyle = {
 // Right-edge detail drawer for a single task. Slides in over the board (the
 // timeline stays visible/usable on the left). Header shows the task name +
 // time/duration; body hosts the Markdown notes editor/viewer.
-export default function DetailPanel({ task, timeLabel, onClose, onSaveNotes }) {
+export default function DetailPanel({
+  task,
+  timeLabel,
+  width = 410,
+  resizing = false,
+  onResizeDown,
+  onClose,
+  onSaveNotes,
+}) {
   React.useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
@@ -97,8 +118,26 @@ export default function DetailPanel({ task, timeLabel, onClose, onSaveNotes }) {
 
   if (!task) return null;
 
+  const panelStyle = {
+    ...panelStyleBase,
+    width: Math.round(width) + 'px',
+    maxWidth: '92vw',
+    // No width transition while actively dragging so it tracks the cursor 1:1.
+    transition: resizing ? 'none' : 'width .12s ease',
+    // Suppress text selection during a resize drag.
+    ...(resizing ? { userSelect: 'none', WebkitUserSelect: 'none' } : null),
+  };
+
   return (
     <aside className="detail-panel" style={panelStyle} onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        style={resizeHandleStyle}
+        onMouseDown={onResizeDown}
+        title="Drag to resize"
+        aria-label="Resize panel"
+        role="separator"
+        aria-orientation="vertical"
+      />
       <div style={headerStyle}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={titleStyle} title={task.title}>

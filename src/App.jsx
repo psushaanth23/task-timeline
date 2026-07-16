@@ -78,6 +78,9 @@ export default class App extends React.Component {
       pendingConnect: null,
       // Id of the task whose detail panel (Markdown notes) is open, or null.
       panelTaskId: null,
+      // Width (px) of the right-docked detail panel; user-resizable + persisted.
+      panelWidth: 410,
+      panelResizing: null,
       orientation: 'horizontal',
       sidebarWidth: 150,
       sidebarCollapsed: false,
@@ -96,6 +99,8 @@ export default class App extends React.Component {
     this.onPendingMove = this.onPendingMove.bind(this);
     this.onSidebarResizeMove = this.onSidebarResizeMove.bind(this);
     this.onSidebarResizeUp = this.onSidebarResizeUp.bind(this);
+    this.onPanelResizeMove = this.onPanelResizeMove.bind(this);
+    this.onPanelResizeUp = this.onPanelResizeUp.bind(this);
     this.scroller = new EdgeAutoScroller({
       getElement: () => this.scrollRef.current,
       getVertical: () => this.state.orientation === 'vertical',
@@ -231,6 +236,7 @@ export default class App extends React.Component {
         sidebarCollapsed: !!v.sidebarCollapsed,
         zoom: v.zoom ?? this.state.zoom,
         trackWidth: v.trackWidth ?? this.state.trackWidth,
+        panelWidth: v.panelWidth ?? this.state.panelWidth,
       });
     }
     this.timer = setInterval(() => this.setState({ nowMin: minutesSince(this.state.originMs) }), 15000);
@@ -254,6 +260,7 @@ export default class App extends React.Component {
       sidebarCollapsed: this.state.sidebarCollapsed,
       zoom: this.state.zoom,
       trackWidth: this.state.trackWidth,
+      panelWidth: this.state.panelWidth,
     };
   }
 
@@ -311,6 +318,7 @@ export default class App extends React.Component {
             view.sidebarCollapsed != null ? !!view.sidebarCollapsed : this.state.sidebarCollapsed,
           zoom: view.zoom ?? this.state.zoom,
           trackWidth: view.trackWidth ?? this.state.trackWidth,
+          panelWidth: view.panelWidth ?? this.state.panelWidth,
         },
         () => {
           this.saveLocal(this.state.tasks, this.state.tracks, this.state.tags);
@@ -519,6 +527,7 @@ export default class App extends React.Component {
       sidebarCollapsed: next.sidebarCollapsed ?? this.state.sidebarCollapsed,
       zoom: next.zoom ?? this.state.zoom,
       trackWidth: next.trackWidth ?? this.state.trackWidth,
+      panelWidth: next.panelWidth ?? this.state.panelWidth,
     };
     saveView(v);
     this.syncDisk();
@@ -1043,6 +1052,31 @@ export default class App extends React.Component {
     document.removeEventListener('mouseup', this.onSidebarResizeUp);
     this.setState({ sidebarResizing: null });
     this.persistView({ sidebarWidth: this.state.sidebarWidth });
+  }
+
+  // Detail panel is docked to the right, so its inner (left) edge is the resize
+  // handle: dragging left widens it, dragging right narrows it.
+  startPanelResize(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.setState({ panelResizing: { startX: e.clientX, startWidth: this.state.panelWidth } });
+    document.addEventListener('mousemove', this.onPanelResizeMove);
+    document.addEventListener('mouseup', this.onPanelResizeUp);
+  }
+
+  onPanelResizeMove(e) {
+    const r = this.state.panelResizing;
+    if (!r) return;
+    const maxW = Math.round((typeof window !== 'undefined' ? window.innerWidth : 1200) * 0.7);
+    const w = Math.max(280, Math.min(maxW, r.startWidth - (e.clientX - r.startX)));
+    this.setState({ panelWidth: w });
+  }
+
+  onPanelResizeUp() {
+    document.removeEventListener('mousemove', this.onPanelResizeMove);
+    document.removeEventListener('mouseup', this.onPanelResizeUp);
+    this.setState({ panelResizing: null });
+    this.persistView({ panelWidth: this.state.panelWidth });
   }
 
   // ---- Shared drag/select infrastructure (content-coordinate based) ----
@@ -2263,6 +2297,9 @@ export default class App extends React.Component {
             <DetailPanel
               task={panelTask}
               timeLabel={panelTimeLabel}
+              width={this.state.panelWidth}
+              resizing={!!this.state.panelResizing}
+              onResizeDown={(e) => this.startPanelResize(e)}
               onClose={() => this.closePanel()}
               onSaveNotes={(notes) => this.setTaskNotes(panelTask.id, notes)}
             />

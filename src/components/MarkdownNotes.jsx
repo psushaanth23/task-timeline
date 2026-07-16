@@ -1,6 +1,11 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+// highlight.js dark theme (github-dark) — fits the app's dark glass aesthetic.
+// rehype-highlight only tokenizes code TEXT (via lowlight/highlight.js); it does
+// not enable raw HTML, so the safe-by-default posture is unchanged.
+import 'highlight.js/styles/github-dark.css';
 
 // react-markdown is safe-by-default: it does NOT render raw HTML embedded in the
 // Markdown (we intentionally do not add rehype-raw), so pasted <script>/<img
@@ -108,7 +113,11 @@ export default function MarkdownNotes({ value, onSave }) {
         <div style={placeholderStyle}>No notes yet — double-click to add Markdown notes.</div>
       ) : (
         <div className="md-body">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+            components={mdComponents}
+          >
             {value}
           </ReactMarkdown>
         </div>

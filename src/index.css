@@ -235,6 +235,13 @@ select,
   font-size: 12px;
   line-height: 1.5;
 }
+/* Let highlight.js token colors paint on our own rounded <pre> background
+   instead of the theme's block background, and keep the mono font. */
+.md-body pre code.hljs {
+  background: transparent;
+  padding: 0;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
 .md-body blockquote {
   margin: 10px 0;
   padding: 2px 12px;
