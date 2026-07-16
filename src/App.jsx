@@ -1442,16 +1442,26 @@ export default class App extends React.Component {
     return best ? best.id : null;
   }
 
-  // #89: pull the earliest missed task in a lane forward so its START lands on
-  // the next 10-minute boundary at/after now (CEIL, e.g. 8:56 -> 9:00), keeping
-  // its duration. Absolute-origin model: `now` and the task times are all minute
-  // offsets from originMs. Overlap is allowed. Undoable + persisted via persist().
+  // #89b: push ALL overdue tasks in a lane past now in one click. The eligible
+  // set = not-done tasks whose END is fully before now. We translate the WHOLE
+  // set rigidly by `delta = ceil10(now) - earliestEligibleStart`, so the earliest
+  // task lands exactly on the next 10-min boundary at/after now while every
+  // task's relative order, gaps and duration are preserved. Future and done
+  // tasks are untouched; overlap is allowed. Absolute-origin model (minute
+  // offsets from originMs). Single undo step, persisted via persist().
   pullMissedTask(laneIndex) {
     const now = minutesSince(this.state.originMs);
-    const id = this.earliestMissedTaskId(laneIndex, now);
-    if (id == null) return;
-    const newStart = Math.max(0, Math.min(MAX_START, Math.ceil(now / SNAP_MIN) * SNAP_MIN));
-    const tasks = this.state.tasks.map((t) => (t.id === id ? { ...t, start: newStart } : t));
+    const eligible = this.state.tasks.filter(
+      (t) => t.lane === laneIndex && !t.done && t.start + t.duration < now,
+    );
+    if (eligible.length === 0) return;
+    const earliestStart = eligible.reduce((m, t) => Math.min(m, t.start), Infinity);
+    const delta = Math.ceil(now / SNAP_MIN) * SNAP_MIN - earliestStart;
+    if (delta === 0) return;
+    const ids = new Set(eligible.map((t) => t.id));
+    const tasks = this.state.tasks.map((t) =>
+      ids.has(t.id) ? { ...t, start: t.start + delta } : t,
+    );
     this.persist(tasks);
   }
 

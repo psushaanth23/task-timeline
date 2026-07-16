@@ -294,16 +294,17 @@ export default function Timeline(props) {
         />
         <TrackTags tags={lane.tagList} onAdd={lane.onAddTag} onOpenTag={lane.onOpenTag} />
       </div>
-      {/* #89: pull the earliest missed (overdue, not-done) task in this track to
-          the next 10-min slot at/after now. Revealed on row hover; dimmed +
-          non-interactive when the track has no eligible task. */}
+      {/* #89b: push ALL overdue (elapsed, not-done) tasks in this track past now
+          in one click — a rigid translation so the earliest lands on the next
+          10-min slot and gaps/order/durations are preserved. Revealed on row
+          hover; dimmed + non-interactive when the track has no eligible task. */}
       <HoverButton
         onClick={(e) => {
           e.stopPropagation();
           if (lane.hasMissed && onPullMissed) onPullMissed(lane.index);
         }}
-        title={lane.hasMissed ? 'Pull next missed task to now' : 'No missed tasks to pull'}
-        aria-label="Pull next missed task to now"
+        title={lane.hasMissed ? 'Push overdue tasks past now' : 'No overdue tasks to push'}
+        aria-label="Push overdue tasks past now"
         aria-disabled={!lane.hasMissed}
         data-no-drag="true"
         className={lane.hasMissed ? 'lane-pull-btn is-active' : 'lane-pull-btn'}
