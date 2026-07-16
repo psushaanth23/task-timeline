@@ -138,7 +138,7 @@ export default function HelpPanel({ onClose }) {
         <div style={headStyle}>
           <span
             style={{
-              fontFamily: "'Orbitron','Space Grotesk',sans-serif",
+              fontFamily: "'JetBrains Mono',monospace",
               fontWeight: 700,
               letterSpacing: '.1em',
               textTransform: 'uppercase',

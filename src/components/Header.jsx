@@ -128,7 +128,7 @@ export default function Header(props) {
           >
             <span
               style={{
-                fontFamily: "'Orbitron','Space Grotesk',sans-serif",
+                fontFamily: "'JetBrains Mono',monospace",
                 fontWeight: 700,
                 letterSpacing: '.14em',
                 textTransform: 'uppercase',

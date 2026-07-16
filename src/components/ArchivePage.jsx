@@ -202,7 +202,7 @@ export default function ArchivePage({ deletedTracks, tags, originMs, timeFormat,
           style={{
             margin: '22px 0 4px',
             fontSize: '24px',
-            fontFamily: "'Orbitron','Space Grotesk',sans-serif",
+            fontFamily: "'JetBrains Mono',monospace",
             letterSpacing: '.08em',
             textTransform: 'uppercase',
             background: 'linear-gradient(90deg,#e7fbff,#7dd3fc)',
