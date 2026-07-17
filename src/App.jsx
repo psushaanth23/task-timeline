@@ -8,7 +8,7 @@ import ArchivePage from './components/ArchivePage.jsx';
 import TagManagerPage from './components/TagManagerPage.jsx';
 import TagTasksPage from './components/TagTasksPage.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
-import { fmt, fmtHour, fmtHM, fmtDateTime, durLabel, MS_PER_MIN, localMidnightMs, minutesSince } from './lib/time.js';
+import { fmt, fmtHour, fmtHM, fmtDateTime, durLabel, MS_PER_MIN, DAY_MIN, DAY_MS, localMidnightMs, minutesSince, windowOriginMs, windowSpanMin, clampPastDays, scrollAfterPrepend } from './lib/time.js';
 import { hexToRgba } from './lib/color.js';
 import { bezier } from './lib/geometry.js';
 import { loadData, saveData, loadView, saveView } from './lib/storage.js';
@@ -32,8 +32,14 @@ const VERTICAL_PX = 5;
 // absolute origin (#37), so snapping to multiples of SNAP_MIN keeps both the
 // start and the end on the 10-minute grid and works naturally across midnight.
 const SNAP_MIN = 10;
-// Max task start offset within the 48h (2880-min) canvas, kept on the snap grid.
-const MAX_START = LAYOUT.totalMin - SNAP_MIN;
+// #96: rolling multi-day window. The visible span is `pastDaysLoaded` full days
+// behind today plus FUTURE_DAYS days from today's midnight (so all of tomorrow is
+// always visible). pastDaysLoaded defaults to 2 and can grow to 15 via the
+// "load previous day" control. The window ALWAYS re-derives from the real current
+// date, so it can never get stuck on a stale persisted origin.
+const DEFAULT_PAST_DAYS = 2;
+const MAX_PAST_DAYS = 15;
+const FUTURE_DAYS = 2; // today + one full day ahead (tomorrow fully visible)
 // Below this on-screen card length (px, horizontal mode) the in-card title is
 // too cramped to read, so we hide it and render the name just outside the card.
 const NARROW_CARD_PX = 90;
@@ -48,15 +54,22 @@ export default class App extends React.Component {
     this.scrollRef = React.createRef();
     this.boardRef = React.createRef();
     this.palette = PALETTE;
-    // The timeline's pixel-0 is a fixed, absolute moment (local midnight of the
-    // anchor day). Task `start` is a minute offset from this origin, so a task
-    // maps to a real date+time and never shifts when the wall clock crosses
-    // midnight. Persisted/migrated in componentDidMount / hydrateFromDisk.
-    const originMs = localMidnightMs();
+    // #96: pixel-0 is the past bound of the rolling window — local midnight of
+    // (today − pastDaysLoaded). It is ALWAYS derived from the real current date
+    // (never a stale persisted value), so real "today" is always in view. Task
+    // `start` is a minute offset from this origin; because tasks persist an
+    // absolute `startMs`, their real date+time is preserved when the origin
+    // shifts (day rollover / load-more-past), which only re-expresses offsets.
+    const pastDaysLoaded = DEFAULT_PAST_DAYS;
+    const originMs = windowOriginMs(localMidnightMs(), pastDaysLoaded);
+    // Seed tasks are authored as offsets from "today"; shift them onto today
+    // within the window (past bound is `pastDaysLoaded` days earlier).
+    const seed = seedTasks().map((t) => ({ ...t, start: t.start + pastDaysLoaded * DAY_MIN }));
     this.state = {
-      tasks: seedTasks(),
+      tasks: seed,
       tracks: makeTracks(),
       originMs,
+      pastDaysLoaded,
       nowMin: minutesSince(originMs),
       editingId: null,
       drag: null,
@@ -140,13 +153,59 @@ export default class App extends React.Component {
     return this.state.orientation === 'vertical' ? this.state.trackWidth : LAYOUT.laneSize;
   }
 
-  // Choose the timeline origin for a saved blob. New-format state carries an
-  // absolute `origin` (epoch ms). Legacy state (minutes-of-day, no origin) is
-  // migrated by anchoring to today's local midnight — since the old code always
-  // rendered relative to today, this reproduces the exact same layout with no
-  // jump, while making every task an absolute moment going forward.
-  resolveOrigin(saved) {
+  // #96: total minutes spanned by the current rolling window.
+  windowTotalMin() {
+    return windowSpanMin(this.state.pastDaysLoaded, FUTURE_DAYS);
+  }
+
+  // Max task start offset within the window, kept on the snap grid.
+  maxStart() {
+    return this.windowTotalMin() - SNAP_MIN;
+  }
+
+  // Shift every task's minute offset by `deltaMin`. Used when the origin moves
+  // (day rollover, load-more-past) so absolute times are preserved while offsets
+  // are re-expressed relative to the new pixel-0. Pure over the array.
+  rebaseTasks(tasks, deltaMin) {
+    if (!deltaMin) return tasks;
+    return tasks.map((t) => ({ ...t, start: t.start + deltaMin }));
+  }
+
+  // Rebase the undo/redo snapshots too, so an undo taken across a rollover /
+  // load-more doesn't restore stale (day-shifted) offsets.
+  rebaseHistory(deltaMin) {
+    if (!deltaMin) return;
+    const fix = (snap) => ({
+      ...snap,
+      tasks: this.rebaseTasks(snap.tasks || [], deltaMin),
+      deletedTracks: (snap.deletedTracks || []).map((d) => ({
+        ...d,
+        tasks: this.rebaseTasks(d.tasks || [], deltaMin),
+      })),
+    });
+    this.undoStack = this.undoStack.map(fix);
+    this.redoStack = this.redoStack.map(fix);
+  }
+
+  // #96: the window origin is ALWAYS derived from the real current date and the
+  // number of past days loaded — never from a persisted origin. This fixes the
+  // "stuck on an old date / Now bar off-screen" bug: any stale persisted origin
+  // is ignored for the VIEW, while tasks keep their absolute times because they
+  // persist an absolute `startMs` (see hydrateTasks / legacyOrigin fallback).
+  computeOrigin(pastDays) {
+    return windowOriginMs(localMidnightMs(), clampPastDays(pastDays));
+  }
+
+  // Legacy tasks saved before the absolute-startMs format stored `start` as an
+  // offset from the blob's persisted origin. Use that persisted origin (falling
+  // back to today's midnight) to recover their absolute moment during hydration.
+  legacyOriginOf(saved) {
     return saved && typeof saved.origin === 'number' ? saved.origin : localMidnightMs();
+  }
+
+  // Read the persisted pastDaysLoaded (from a view blob), clamped to 2..15.
+  resolvePastDays(view) {
+    return clampPastDays(view && view.pastDaysLoaded, DEFAULT_PAST_DAYS, MAX_PAST_DAYS);
   }
 
   // Ensure every track has an id and a tagIds array (migration for older saved
@@ -175,7 +234,7 @@ export default class App extends React.Component {
     }));
   }
 
-  hydrateDeleted(rawDeleted, originMs) {
+  hydrateDeleted(rawDeleted, originMs, legacyOrigin) {
     if (!Array.isArray(rawDeleted)) return [];
     return rawDeleted.map((d) => ({
       id: d.id || genTrackId(),
@@ -183,7 +242,7 @@ export default class App extends React.Component {
       color: d.color || PALETTE[0],
       tagIds: Array.isArray(d.tagIds) ? d.tagIds : [],
       deletedAt: typeof d.deletedAt === 'number' ? d.deletedAt : Date.now(),
-      tasks: this.hydrateTasks(d.tasks || [], originMs),
+      tasks: this.hydrateTasks(d.tasks || [], originMs, legacyOrigin),
     }));
   }
 
@@ -196,10 +255,20 @@ export default class App extends React.Component {
   // Rebuild in-memory tasks (minute offset from origin) from persisted tasks,
   // deriving `start` from the absolute `startMs` when present (new format) and
   // falling back to the raw `start` for legacy data. Also normalizes done/deps.
-  hydrateTasks(rawTasks, originMs) {
+  hydrateTasks(rawTasks, originMs, legacyOrigin = originMs) {
     return rawTasks.map((t) => {
       const parentIds = Array.isArray(t.parentIds) ? t.parentIds : t.parentId ? [t.parentId] : [];
-      const start = typeof t.startMs === 'number' ? Math.round((t.startMs - originMs) / MS_PER_MIN) : t.start;
+      // Prefer the absolute startMs (origin-independent). For legacy tasks that
+      // only have a `start` offset, recover the absolute moment via the blob's
+      // own (legacy) origin, then re-express relative to the fresh window origin
+      // so the task lands on its real date+time regardless of the new origin.
+      const absMs =
+        typeof t.startMs === 'number'
+          ? t.startMs
+          : typeof t.start === 'number'
+            ? legacyOrigin + Math.round(t.start) * MS_PER_MIN
+            : originMs;
+      const start = Math.round((absMs - originMs) / MS_PER_MIN);
       // Migration: tasks saved before the notes feature default to "".
       const notes = typeof t.notes === 'string' ? t.notes : '';
       const out = { ...t, start, done: !!t.done, parentIds, notes };
@@ -229,22 +298,33 @@ export default class App extends React.Component {
   }
 
   componentDidMount() {
+    // Resolve the past-days-loaded first (view setting) so the fresh window
+    // origin is computed relative to the real current date. The persisted
+    // `origin` is IGNORED for the window — only used to recover legacy tasks.
+    const v = loadView();
+    const pastDaysLoaded = this.resolvePastDays(v);
+    const originMs = this.computeOrigin(pastDaysLoaded);
     const s = loadData();
     if (s) {
-      const originMs = this.resolveOrigin(s);
+      const legacyOrigin = this.legacyOriginOf(s);
       const tr = this.normalizeTracks(s.tracks, this.state.tracks);
-      const tasks = this.hydrateTasks(s.tasks, originMs);
+      const tasks = this.hydrateTasks(s.tasks, originMs, legacyOrigin);
       this.setState({
         tasks,
         tracks: tr,
         tags: this.normalizeTags(s),
-        deletedTracks: this.hydrateDeleted(s.deletedTracks, originMs),
+        deletedTracks: this.hydrateDeleted(s.deletedTracks, originMs, legacyOrigin),
         dividers: this.normalizeDividers(s.dividers, tr),
         originMs,
+        pastDaysLoaded,
         nowMin: minutesSince(originMs),
       });
+    } else {
+      // No persisted data: keep the seed but re-anchor it to the resolved window
+      // (origin may differ from the constructor default if pastDaysLoaded > 2).
+      const seed = seedTasks().map((t) => ({ ...t, start: t.start + pastDaysLoaded * DAY_MIN }));
+      this.setState({ tasks: seed, originMs, pastDaysLoaded, nowMin: minutesSince(originMs) });
     }
-    const v = loadView();
     if (v) {
       this.setState({
         orientation: v.orientation || 'horizontal',
@@ -255,7 +335,12 @@ export default class App extends React.Component {
         panelWidth: v.panelWidth ?? this.state.panelWidth,
       });
     }
-    this.timer = setInterval(() => this.setState({ nowMin: minutesSince(this.state.originMs) }), 15000);
+    // #96: day-rollover watcher. The same interval that advances the Now
+    // indicator also detects when the local date changes (midnight passes); when
+    // it does, roll the window forward so the future stays ≥1 day ahead and the
+    // past default slides, keeping tasks pinned to their absolute times.
+    this._lastDayMs = localMidnightMs();
+    this.timer = setInterval(() => this.tickClock(), 15000);
     document.addEventListener('keydown', this.onDocKeyDown);
     window.addEventListener('hashchange', this.onHashChange);
     // Best-effort flush of any pending debounced disk write on page unload.
@@ -277,6 +362,7 @@ export default class App extends React.Component {
       zoom: this.state.zoom,
       trackWidth: this.state.trackWidth,
       panelWidth: this.state.panelWidth,
+      pastDaysLoaded: this.state.pastDaysLoaded,
     };
   }
 
@@ -316,19 +402,25 @@ export default class App extends React.Component {
   async hydrateFromDisk() {
     const disk = await loadState();
     if (disk && Array.isArray(disk.tasks) && !this._dirtyBeforeHydration) {
-      // Disk wins: apply its tasks/tracks/view and mirror into the LS cache.
-      const originMs = this.resolveOrigin(disk);
-      const tr = this.normalizeTracks(disk.tracks, this.state.tracks);
-      const tasks = this.hydrateTasks(disk.tasks, originMs);
+      // Disk wins: apply its tasks/tracks/view and mirror into the LS cache. The
+      // window origin is derived FRESH from the real date + persisted
+      // pastDaysLoaded — never the stale disk `origin` (which only recovers
+      // legacy tasks lacking an absolute startMs).
       const view = disk.view || {};
+      const pastDaysLoaded = this.resolvePastDays(view);
+      const originMs = this.computeOrigin(pastDaysLoaded);
+      const legacyOrigin = this.legacyOriginOf(disk);
+      const tr = this.normalizeTracks(disk.tracks, this.state.tracks);
+      const tasks = this.hydrateTasks(disk.tasks, originMs, legacyOrigin);
       this.setState(
         {
           tasks,
           tracks: tr,
           tags: this.normalizeTags(disk),
-          deletedTracks: this.hydrateDeleted(disk.deletedTracks, originMs),
+          deletedTracks: this.hydrateDeleted(disk.deletedTracks, originMs, legacyOrigin),
           dividers: this.normalizeDividers(disk.dividers, tr),
           originMs,
+          pastDaysLoaded,
           nowMin: minutesSince(originMs),
           orientation: view.orientation || this.state.orientation,
           sidebarWidth: view.sidebarWidth || this.state.sidebarWidth,
@@ -554,6 +646,7 @@ export default class App extends React.Component {
       zoom: next.zoom ?? this.state.zoom,
       trackWidth: next.trackWidth ?? this.state.trackWidth,
       panelWidth: next.panelWidth ?? this.state.panelWidth,
+      pastDaysLoaded: next.pastDaysLoaded ?? this.state.pastDaysLoaded,
     };
     saveView(v);
     this.syncDisk();
@@ -1030,7 +1123,7 @@ export default class App extends React.Component {
     const timeRaw = V ? e.clientY - rect.top : e.clientX - rect.left;
     const laneRaw = V ? e.clientX - rect.left : e.clientY - rect.top;
     let min = this.snapTime(timeRaw / px);
-    min = Math.max(0, Math.min(MAX_START, min));
+    min = Math.max(0, Math.min(this.maxStart(), min));
     const lane = Math.max(0, Math.min(this.state.tracks.length - 1, Math.floor(laneRaw / laneSize)));
     const task = {
       id: 'id' + Date.now() + Math.floor(Math.random() * 9999),
@@ -1075,6 +1168,79 @@ export default class App extends React.Component {
       if (smooth === false) sc.scrollLeft = target;
       else sc.scrollTo({ left: target, behavior: 'smooth' });
     }
+  }
+
+  // Advance the Now indicator; if the local calendar day changed, roll the
+  // rolling window forward. Called every 15s from the mount timer.
+  tickClock() {
+    const todayMs = localMidnightMs();
+    if (todayMs !== this._lastDayMs) {
+      this.rollToToday(todayMs);
+    } else {
+      this.setState({ nowMin: minutesSince(this.state.originMs) });
+    }
+  }
+
+  // Recompute the window origin for the new "today". The origin moves forward
+  // (past bound slides), so task offsets shift back by the same delta to keep
+  // their absolute date+time fixed. No disk write needed — persisted startMs is
+  // absolute, so the next load re-derives everything from the real date anyway.
+  rollToToday(todayMs) {
+    const newOrigin = windowOriginMs(todayMs, this.state.pastDaysLoaded);
+    const oldOrigin = this.state.originMs;
+    this._lastDayMs = todayMs;
+    if (newOrigin === oldOrigin) {
+      this.setState({ nowMin: minutesSince(oldOrigin) });
+      return;
+    }
+    const deltaMin = Math.round((oldOrigin - newOrigin) / MS_PER_MIN);
+    this.rebaseHistory(deltaMin);
+    const tasks = this.rebaseTasks(this.state.tasks, deltaMin);
+    const deletedTracks = this.state.deletedTracks.map((d) => ({
+      ...d,
+      tasks: this.rebaseTasks(d.tasks || [], deltaMin),
+    }));
+    this.setState({ originMs: newOrigin, tasks, deletedTracks, nowMin: minutesSince(newOrigin) });
+  }
+
+  // #96: load one more full day into the past (up to MAX_PAST_DAYS). The origin
+  // moves earlier by a day, so tasks shift forward by DAY_MIN (absolute times
+  // preserved). Content grows on the past edge, so we adjust the scroll offset by
+  // the newly-added width to keep the user's current view stationary.
+  loadPreviousDay() {
+    if (this.state.pastDaysLoaded >= MAX_PAST_DAYS) return;
+    const px = this.timeDensity();
+    const V = this.state.orientation === 'vertical';
+    const newPast = this.state.pastDaysLoaded + 1;
+    const oldOrigin = this.state.originMs;
+    const newOrigin = this.computeOrigin(newPast);
+    const deltaMin = Math.round((oldOrigin - newOrigin) / MS_PER_MIN);
+    this.rebaseHistory(deltaMin);
+    const tasks = this.rebaseTasks(this.state.tasks, deltaMin);
+    const deletedTracks = this.state.deletedTracks.map((d) => ({
+      ...d,
+      tasks: this.rebaseTasks(d.tasks || [], deltaMin),
+    }));
+    // Capture current scroll BEFORE the layout grows so we can re-anchor after.
+    const sc = this.scrollRef.current;
+    const board = this.boardRef.current;
+    const prevLeft = sc ? sc.scrollLeft : 0;
+    const prevTop = (V ? (board && board.scrollTop) : 0) || (sc ? sc.scrollTop : 0) || 0;
+    this.setState(
+      { pastDaysLoaded: newPast, originMs: newOrigin, tasks, deletedTracks, nowMin: minutesSince(newOrigin) },
+      () => {
+        // The past edge added `deltaMin` minutes of content on the left/top;
+        // advance scroll by the same pixels so nothing appears to jump (#96).
+        if (V) {
+          const target = scrollAfterPrepend(prevTop, 1, px);
+          if (board && board.scrollHeight > board.clientHeight + 1) board.scrollTop = target;
+          if (sc && sc.scrollHeight > sc.clientHeight + 1) sc.scrollTop = target;
+        } else if (sc) {
+          sc.scrollLeft = scrollAfterPrepend(prevLeft, 1, px);
+        }
+        this.persistView({ pastDaysLoaded: newPast });
+      },
+    );
   }
 
   toggleOrientation() {
@@ -1320,7 +1486,7 @@ export default class App extends React.Component {
     if (!d) return;
     const p = this.pointerToContent(x, y);
     if (!p) return;
-    const newStart = Math.max(0, Math.min(MAX_START, this.snapTime(p.time - d.grabTime)));
+    const newStart = Math.max(0, Math.min(this.maxStart(), this.snapTime(p.time - d.grabTime)));
     const newLane = Math.max(0, Math.min(this.state.tracks.length - 1, Math.round(p.laneFloat - d.grabLane)));
     const moved = d.moved || Math.abs(x - d.startClientX) > 3 || Math.abs(y - d.startClientY) > 3;
     this.setState({ drag: { ...d, curStart: newStart, curLane: newLane, moved } });
@@ -1362,7 +1528,7 @@ export default class App extends React.Component {
     if (starts.length) {
       const minS = Math.min(...starts);
       const maxS = Math.max(...starts);
-      delta = Math.max(-minS, Math.min(MAX_START - maxS, delta));
+      delta = Math.max(-minS, Math.min(this.maxStart() - maxS, delta));
     }
     const moved = g.moved || Math.abs(x - g.startClientX) > 3 || Math.abs(y - g.startClientY) > 3;
     this.setState({ groupDrag: { ...g, delta, moved } });
@@ -1375,7 +1541,7 @@ export default class App extends React.Component {
       const sel = new Set(this.state.selection);
       const tasks = this.state.tasks.map((t) =>
         sel.has(t.id) && g.orig[t.id] != null
-          ? { ...t, start: Math.max(0, Math.min(MAX_START, g.orig[t.id] + g.delta)) }
+          ? { ...t, start: Math.max(0, Math.min(this.maxStart(), g.orig[t.id] + g.delta)) }
           : t,
       );
       this.persist(tasks);
@@ -1401,7 +1567,7 @@ export default class App extends React.Component {
     const task = this.state.tasks.find((t) => t.id === r.id);
     if (!task) return;
     let dur = this.snapTime(p.time - task.start);
-    dur = Math.max(SNAP_MIN, Math.min(LAYOUT.totalMin - task.start, dur));
+    dur = Math.max(SNAP_MIN, Math.min(this.windowTotalMin() - task.start, dur));
     const moved = r.moved || Math.abs(x - r.startClientX) > 3 || Math.abs(y - r.startClientY) > 3;
     this.setState({ resize: { ...r, curDuration: dur, moved } });
   }
@@ -1536,7 +1702,9 @@ export default class App extends React.Component {
     const V = this.state.orientation === 'vertical';
     const px = this.timeDensity();
     const laneSize = this.laneCross();
-    const { dateBarH, hourBarH, trackHeaderH, totalMin } = LAYOUT;
+    const { dateBarH, hourBarH, trackHeaderH } = LAYOUT;
+    const totalMin = this.windowTotalMin();
+    const windowDays = this.state.pastDaysLoaded + FUTURE_DAYS;
     const rulerH = dateBarH + hourBarH;
     const timeAxisSize = totalMin * px;
     const tasks = this.state.tasks;
@@ -1839,7 +2007,7 @@ export default class App extends React.Component {
       });
     }
 
-    const hourTicks = Array.from({ length: 49 }, (_, h) => ({
+    const hourTicks = Array.from({ length: totalMin / 60 + 1 }, (_, h) => ({
       label: fmtHour(h, this.props.timeFormat),
       style: {
         position: 'absolute',
@@ -1875,7 +2043,7 @@ export default class App extends React.Component {
             : [];
     const minorTicks = [];
     if (!V && minorMarks.length) {
-      for (let h = 0; h < 48; h++) {
+      for (let h = 0; h < totalMin / 60; h++) {
         for (const m of minorMarks) {
           minorTicks.push({
             key: h + '-' + m,
@@ -1899,7 +2067,7 @@ export default class App extends React.Component {
         }
       }
     }
-    const hourTicksV = Array.from({ length: 49 }, (_, h) => ({
+    const hourTicksV = Array.from({ length: totalMin / 60 + 1 }, (_, h) => ({
       label: fmtHour(h, this.props.timeFormat),
       style: {
         height: 60 * px + 'px',
@@ -1912,12 +2080,18 @@ export default class App extends React.Component {
         flex: 'none',
       },
     }));
+    // #96: day bands span the whole rolling window (pastDaysLoaded + FUTURE_DAYS
+    // days). baseDate is the PAST bound (origin); the band at index `todayOffset`
+    // is real "today", highlighted so it stands out across the multi-day span.
     const baseDate = new Date(this.state.originMs);
-    const dayBands = [0, 1].map((dOff) => {
+    const todayOffset = this.state.pastDaysLoaded;
+    const dayBands = Array.from({ length: windowDays }, (_, dOff) => {
       const dt = new Date(baseDate);
       dt.setDate(dt.getDate() + dOff);
+      const isToday = dOff === todayOffset;
       return {
         label: dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
+        isToday,
         style: {
           position: 'absolute',
           left: gutterW + dOff * 1440 * px + 'px',
@@ -1928,30 +2102,37 @@ export default class App extends React.Component {
           alignItems: 'center',
           paddingLeft: '10px',
           fontSize: '11px',
-          fontWeight: 600,
+          fontWeight: isToday ? 800 : 600,
           letterSpacing: '.04em',
-          color: 'rgba(231,233,238,.65)',
-          background: dOff % 2 ? 'rgba(255,255,255,.025)' : 'transparent',
+          color: isToday ? '#ffe14d' : 'rgba(231,233,238,.65)',
+          background: isToday
+            ? 'rgba(255,214,10,.10)'
+            : dOff % 2
+              ? 'rgba(255,255,255,.025)'
+              : 'transparent',
           borderBottom: '1px solid rgba(255,255,255,.08)',
+          borderLeft: dOff > 0 ? '1px solid rgba(255,255,255,.14)' : 'none',
           boxSizing: 'border-box',
         },
       };
     });
-    const dayBandsV = [0, 1].map((dOff) => {
+    const dayBandsV = Array.from({ length: windowDays }, (_, dOff) => {
       const dt = new Date(baseDate);
       dt.setDate(dt.getDate() + dOff);
+      const isToday = dOff === todayOffset;
       return {
         label: dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
+        isToday,
         style: {
           position: 'absolute',
           top: dOff * 1440 * px + 'px',
           left: 0,
           right: 0,
           fontSize: '9.5px',
-          fontWeight: 700,
+          fontWeight: isToday ? 800 : 700,
           letterSpacing: '.03em',
-          color: '#a5b4fc',
-          background: '#1a1a20',
+          color: isToday ? '#ffe14d' : '#a5b4fc',
+          background: isToday ? 'rgba(255,214,10,.10)' : '#1a1a20',
           padding: '2px 6px',
           borderTop: dOff > 0 ? '1px solid rgba(99,102,241,.4)' : 'none',
         },
@@ -1974,7 +2155,7 @@ export default class App extends React.Component {
       this.state.selection.forEach((id) => {
         const gt = byId[id];
         if (!gt) return;
-        const s = Math.max(0, Math.min(MAX_START, (groupDrag.orig[id] ?? gt.start) + groupDrag.delta));
+        const s = Math.max(0, Math.min(this.maxStart(), (groupDrag.orig[id] ?? gt.start) + groupDrag.delta));
         if (s < best) {
           best = s;
           groupAnchorId = id;
@@ -1992,7 +2173,7 @@ export default class App extends React.Component {
         lane = drag.curLane;
         start = drag.curStart;
       } else if (isGroupMoving) {
-        start = Math.max(0, Math.min(MAX_START, (groupDrag.orig[t.id] ?? t.start) + groupDrag.delta));
+        start = Math.max(0, Math.min(this.maxStart(), (groupDrag.orig[t.id] ?? t.start) + groupDrag.delta));
       }
       if (resize && resize.id === t.id) duration = resize.curDuration;
       const selected = selectionSet.has(t.id);
@@ -2508,7 +2689,7 @@ export default class App extends React.Component {
       lanesStyle,
       gridOverlayStyle,
       marqueeRect,
-      todayLabel: baseDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }),
+      todayLabel: new Date(localMidnightMs()).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }),
       svgWidthNum: contentW,
       svgHeightNum: contentH,
       rulerStyle: {
@@ -2548,6 +2729,11 @@ export default class App extends React.Component {
       labelGutterW: gutterW,
       labelsHidden,
       onPullMissed: (i) => this.pullMissedTask(i),
+      // #96: rolling-window "load previous day" control at the past edge.
+      pastDaysLoaded: this.state.pastDaysLoaded,
+      maxPastDays: MAX_PAST_DAYS,
+      canLoadPast: this.state.pastDaysLoaded < MAX_PAST_DAYS,
+      onLoadPreviousDay: () => this.loadPreviousDay(),
       contentRef: this.contentRef,
       scrollRef: this.scrollRef,
       // Wrapper for the timeline's scroll pane. In HORIZONTAL mode the time axis

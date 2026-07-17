@@ -143,6 +143,11 @@ export default function Timeline(props) {
     onSidebarResizeDown,
     resizeHandleStyle,
     onPullMissed,
+    // #96: rolling multi-day window — "load previous day" at the past edge.
+    pastDaysLoaded = 2,
+    maxPastDays = 15,
+    canLoadPast = false,
+    onLoadPreviousDay,
   } = props;
 
   // Ref to the currently-editing title element; cancelRef distinguishes an
@@ -480,8 +485,59 @@ export default function Timeline(props) {
 
   // Shared inner content (dependency SVG, now-line, tasks, marquee) rendered
   // inside the offset content wrapper for both orientations (#87).
+  // #96: control anchored at the very start (past edge) of the scrollable
+  // content — origin (pixel-0) is the past bound. Clicking loads one more past
+  // day (scroll is re-anchored by App so the view doesn't jump). At the 15-day
+  // max it shows a disabled hint instead.
+  const renderLoadPast = () => {
+    const atMax = !canLoadPast;
+    const base = {
+      position: 'absolute',
+      zIndex: 8,
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      padding: '6px 10px',
+      borderRadius: '8px',
+      fontFamily: "'JetBrains Mono',monospace",
+      fontSize: '11px',
+      fontWeight: 600,
+      letterSpacing: '.03em',
+      whiteSpace: 'nowrap',
+      background: 'rgba(20,22,30,.82)',
+      backdropFilter: 'blur(6px)',
+      WebkitBackdropFilter: 'blur(6px)',
+      border: '1px solid rgba(94,234,212,.35)',
+      color: atMax ? 'rgba(231,233,238,.45)' : '#5eead4',
+      boxShadow: '0 2px 10px rgba(0,0,0,.45)',
+      cursor: atMax ? 'default' : 'pointer',
+      pointerEvents: 'auto',
+      userSelect: 'none',
+    };
+    const pos = isVertical ? { top: '8px', left: '8px' } : { left: '8px', top: '8px' };
+    return (
+      <div
+        data-no-drag
+        title={atMax ? 'Maximum 15 days of history' : 'Load one more previous day'}
+        style={{ ...base, ...pos, ...(atMax ? { borderColor: 'rgba(255,255,255,.12)' } : null) }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!atMax && onLoadPreviousDay) onLoadPreviousDay();
+        }}
+      >
+        {atMax ? (
+          <span>{isVertical ? '▲' : '◀'} 15-day max ({pastDaysLoaded}d)</span>
+        ) : (
+          <span>{isVertical ? '▲' : '◀'} Load previous day</span>
+        )}
+      </div>
+    );
+  };
+
   const renderContentInner = () => (
     <>
+      {renderLoadPast()}
       <svg
         width={svgWidthNum}
         height={svgHeightNum}

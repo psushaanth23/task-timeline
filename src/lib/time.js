@@ -1,6 +1,37 @@
 export const pad = (n) => String(n).padStart(2, '0');
 
 export const MS_PER_MIN = 60000;
+export const DAY_MIN = 1440;
+export const DAY_MS = DAY_MIN * MS_PER_MIN;
+
+// #96: rolling multi-day window helpers. The timeline is no longer a single day;
+// it spans `pastDays` full days before today plus `futureDays` days from today's
+// midnight (today + the days ahead). All values derive from the REAL current date
+// so the window always includes actual "today" — never a stale persisted origin.
+
+// Pixel-0 origin = local midnight of (today − pastDays). Given todayMidnightMs so
+// callers can compute a stable value once per render / rollover.
+export function windowOriginMs(todayMidnightMs, pastDays) {
+  return todayMidnightMs - Math.max(0, pastDays) * DAY_MS;
+}
+
+// Total minutes spanned by the window: pastDays + futureDays worth of days.
+export function windowSpanMin(pastDays, futureDays) {
+  return (Math.max(0, pastDays) + Math.max(1, futureDays)) * DAY_MIN;
+}
+
+// Clamp the user-controlled "days loaded into the past" to the allowed range.
+export function clampPastDays(n, min = 2, max = 15) {
+  const v = Math.round(Number.isFinite(n) ? n : min);
+  return Math.max(min, Math.min(max, v));
+}
+
+// Scroll-anchoring math for prepending past days: when `addedDays` new day(s) are
+// added on the past edge, content grows by addedDays*DAY_MIN*px, so the scroll
+// offset must advance by the same amount to keep the current view stationary.
+export function scrollAfterPrepend(prevScroll, addedDays, pxPerMin) {
+  return prevScroll + addedDays * DAY_MIN * pxPerMin;
+}
 
 export function currentMin() {
   const d = new Date();
