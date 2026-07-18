@@ -173,6 +173,103 @@ export function computeBulletContinuation(value, selStart, selEnd) {
   return { value: next, caret: selStart + prefix.length };
 }
 
+// #97: list-line indent regex (bullets `-`/`*`/`+` and, by extension, todos
+// `- [ ]`/`- [x]`, which are just a marker + `[ ]` prefix). We only ever touch
+// the LEADING whitespace, so the marker/checkbox/text are never disturbed.
+const LIST_LINE_RE = /^(\s*)([-*+])(\s+)/;
+const leadingSpaces = (line) => (line.match(/^ */) || [''])[0].length;
+
+// Level (in 2-space units) of the nearest preceding NON-EMPTY line above
+// `lineStart`, but only if that line is itself a list item. Returns -1 when the
+// preceding non-empty line is not a list (or there is none) — meaning the
+// current line has no list parent, so it can't be indented (orphan guard).
+function precedingListLevel(value, lineStart) {
+  let end = lineStart - 1; // index of the '\n' terminating the previous line
+  while (end >= 0) {
+    const start = value.lastIndexOf('\n', end - 1) + 1;
+    const line = value.slice(start, end);
+    if (line.trim() !== '') {
+      return LIST_LINE_RE.test(line) ? Math.floor(leadingSpaces(line) / 2) : -1;
+    }
+    end = start - 1;
+  }
+  return -1;
+}
+
+// #97: compute the Tab (indent) / Shift+Tab (outdent) transformation for the
+// notes editor. Indentation is 2 spaces per level (matches the #90 todo nesting
+// + GFM convention). Operates on the leading whitespace of list lines (plain
+// bullets AND todos), so markers/checkboxes/text stay intact. Rules:
+//   • single line: indent/outdent that line; a list line's indent is guarded so
+//     it can never sit more than one level deeper than the preceding list line
+//     (no orphan over-indent). Outdent always allowed down to column 0.
+//   • multi-line selection: indent/outdent every LIST line in the selection and
+//     keep the selection covering the same lines.
+//   • caret/selection shifts by the added/removed spaces so typing continues.
+// Pure + exported for testing. Returns { value, selStart, selEnd }.
+export function computeIndent(value, selStart, selEnd, outdent) {
+  const STEP = 2;
+  const lineStartOf = (pos) => value.lastIndexOf('\n', pos - 1) + 1;
+  const lineEndOf = (pos) => {
+    const nl = value.indexOf('\n', pos);
+    return nl === -1 ? value.length : nl;
+  };
+
+  const multi = selStart !== selEnd && value.slice(selStart, selEnd).includes('\n');
+
+  if (multi) {
+    const firstStart = lineStartOf(selStart);
+    // A selection that ends exactly at a line start shouldn't pull in the next line.
+    let endRef = selEnd;
+    if (selEnd > selStart && value[selEnd - 1] === '\n') endRef = selEnd - 1;
+    const lastEnd = lineEndOf(endRef);
+    const lines = value.slice(firstStart, lastEnd).split('\n');
+    let totalDelta = 0;
+    const out = lines.map((ln) => {
+      if (!LIST_LINE_RE.test(ln)) return ln; // only list lines (per spec)
+      if (outdent) {
+        const rm = Math.min(STEP, leadingSpaces(ln));
+        totalDelta -= rm;
+        return rm > 0 ? ln.slice(rm) : ln;
+      }
+      totalDelta += STEP;
+      return '  ' + ln;
+    });
+    const newValue = value.slice(0, firstStart) + out.join('\n') + value.slice(lastEnd);
+    // Keep the selection over the same lines (start of first .. end of last).
+    return { value: newValue, selStart: firstStart, selEnd: lastEnd + totalDelta };
+  }
+
+  // Single line (collapsed caret or an in-line range).
+  const ls = lineStartOf(selStart);
+  const le = lineEndOf(selEnd);
+  const line = value.slice(ls, le);
+  const isList = LIST_LINE_RE.test(line);
+  let delta = 0;
+  let newLine = line;
+  if (outdent) {
+    const rm = Math.min(STEP, leadingSpaces(line));
+    if (rm > 0) {
+      newLine = line.slice(rm);
+      delta = -rm;
+    }
+  } else {
+    let allow = true;
+    if (isList) {
+      const curLevel = Math.floor(leadingSpaces(line) / STEP);
+      const maxLevel = precedingListLevel(value, ls) + 1; // orphan guard
+      if (curLevel >= maxLevel) allow = false;
+    }
+    if (allow) {
+      newLine = '  ' + line;
+      delta = STEP;
+    }
+  }
+  const newValue = value.slice(0, ls) + newLine + value.slice(le);
+  const shift = (n) => Math.max(ls, n + delta);
+  return { value: newValue, selStart: shift(selStart), selEnd: shift(selEnd) };
+}
+
 const textareaStyle = {
   width: '100%',
   flex: 1,
@@ -357,6 +454,28 @@ export default function MarkdownNotes({ value, onSave, todoSnapshots, onToggleTo
             } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
               e.preventDefault();
               commit();
+            } else if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+              // #97: Tab indents (sub-point) / Shift+Tab outdents list lines by
+              // one 2-space level. Always preventDefault so focus stays in the
+              // textarea. Works on bullets and todos; guards against orphan
+              // over-indent; handles multi-line selections.
+              e.preventDefault();
+              const el = e.currentTarget;
+              const res = computeIndent(el.value, el.selectionStart, el.selectionEnd, e.shiftKey);
+              if (
+                res.value !== el.value ||
+                res.selStart !== el.selectionStart ||
+                res.selEnd !== el.selectionEnd
+              ) {
+                setDraft(res.value);
+                requestAnimationFrame(() => {
+                  const ta = taRef.current;
+                  if (ta) {
+                    ta.focus();
+                    ta.setSelectionRange(res.selStart, res.selEnd);
+                  }
+                });
+              }
             } else if (
               e.key === 'Enter' &&
               !e.shiftKey &&
