@@ -1,130 +1,63 @@
 # Task Timeline
 
-A single-user **timeline task planner** — tasks are cards on a fixed **48-hour** timeline, grouped into color-coded tracks (swimlanes), with drag-to-move/resize, dependency wiring, Markdown notes, a to-do planner, a Pomodoro timer, and a daily "completed" log. It's a **Vite + React 18** app that persists to a tiny on-disk JSON API served by the dev server, and installs as an **offline-capable PWA** on your phone.
+A timeline-based task planner. Tasks are cards on a 48-hour timeline, grouped into color-coded tracks. Drag to move/resize them, link dependencies, add Markdown notes, plan to-dos, run a Pomodoro timer, and keep a daily log of what you finished.
 
-The Mac you run it on is the source of truth; a phone just syncs and can view the last-synced board even when the Mac is asleep.
+Built with Vite + React. No real backend — the dev server writes state to a JSON file on disk. The Mac you run it on is the source of truth; a phone installs it as a PWA and syncs from there.
 
-> **Screenshots:** image slots are stubbed below (`docs/screenshots/*.png`). Drop your own captures in — crop/sanitize as you like — and they'll render here.
+## What's in it
 
----
+- **Timeline board** — 48h canvas anchored to today, horizontal or vertical. Live "now" line. Create cards by double-clicking, drag to move across time/tracks, drag the edge to resize. Marquee-select and move groups. Snaps to 10 minutes.
+- **Tracks** — rename, recolor, reorder, add/delete, drop dividers between them.
+- **Dependencies** — drag between card dots (or two-click). Back-to-back links show as a chain link.
+- **Notes** — a detail panel per task with Markdown (GFM), code highlighting, checkbox to-dos, and pasted images.
+- **To-do planner** — a nestable to-do tree. Schedule a to-do onto a timeline, group them under a root, and soft-delete with a 7-day recovery bin.
+- **Pomodoro** — focus/break timer in the header, 25m focus with breaks.
+- **Completed log** — finished tasks by day, with a summaries-only view to scroll through your days.
+- **Backlog / Archive / Tags** — tasks that age off the canvas, deleted tracks, and a global tag pool.
+- **Undo/redo, copy/paste.**
+- **Installable PWA** — install on your phone, see the last synced board offline (read-only), with a sync status pill and a manual "sync now".
 
-## Screens & features
+## Run it
 
-### Timeline board
-![Timeline board](docs/screenshots/timeline.png)
-
-- **48-hour canvas** anchored to local midnight of *today*, with 10-minute ruler ticks, hour labels, and day bands. Re-anchors automatically at midnight so dates never go stale.
-- **Horizontal or vertical** orientation (time → right, or time → down with tracks as columns).
-- **Live "now" line** — a glowing marker tracks the current time and auto-scrolls into view ("Jump to now").
-- **Tracks (swimlanes)** — rename inline, cycle color via the dot, reorder by dragging the handle, add/delete, and drop visual **dividers** between them.
-- **Task cards** — double-click empty space to create; drag to move across time and tracks; drag the trailing edge/corner to resize duration. Everything snaps to a 10-minute grid.
-- **Marquee select + group move** — rubber-band a region to select; drag any selected card to move the whole group (time-axis only, tracks preserved).
-- **Dependencies** — drag from a card's start/end dot onto another card, or use the two-click connect gesture. Rendered as dashed bezier curves; back-to-back same-track links collapse into a chain-link glyph.
-- **Progress-aware styling** — cards fade/brighten against the current time and pulse when urgent. Double-click (triple-click on a card) toggles **done**.
-- **Density zoom**, **edge auto-scroll** while dragging, **undo/redo**, and task **copy/paste**.
-
-### Task detail + Markdown notes
-![Task detail panel with Markdown notes](docs/screenshots/notes.png)
-
-- Right-docked, resizable detail panel per task.
-- **Markdown notes** (GFM): code highlighting, interactive checkbox to-dos, and pasted-image upload. Raw HTML is intentionally disabled — safe by default.
-
-### To-do planner
-![To-do planner panel](docs/screenshots/todos.png)
-
-- A nestable to-do tree in a side panel. A top-level item with children becomes a **group root**.
-- **Schedule to a timeline** — add a to-do to a track and it becomes a board task.
-- Assign a group root to a timeline, then one-click **+** on any child adds it straight to that timeline (long-press to pick a different track).
-- **Soft delete + Deleted bin** — deleting hides a to-do rather than destroying it; a "deleted" view lets you **restore**, and items are purged 7 days after deletion.
-- Show/hide completed to-dos.
-
-### Pomodoro timer
-![Pomodoro timer in the header](docs/screenshots/pomodoro.png)
-
-- Header-centered live timer: **Focus (25m) → Short break → Long break** (long break after every 4 focus sessions).
-- The header glows the phase color (teal focus / amber break) so the current phase is glanceable. Bind a task to focus on it.
-
-### Completed log
-![Completed page with per-day summaries](docs/screenshots/completed.png)
-
-- A dated log of finished tasks with per-day productivity summaries.
-- **Collapse toggle** — "Summaries only" hides the tasks so you can scroll day-by-day and see how productive each day was.
-
-### Backlog, Archive & Tags
-![Backlog and tag views](docs/screenshots/backlog-tags.png)
-
-- **Backlog** — tasks that age off the 48h canvas are swept here (grouped by scheduled day) instead of vanishing; restore-to-now or drop.
-- **Archive** — soft-deleted tracks (with their tasks + notes); restore or purge.
-- **Tags** — a global tag pool assigned to tracks, a tag manager, and a tasks-by-tag view.
-
-### Install on your phone (PWA + offline)
-![Installed PWA on a phone, offline banner](docs/screenshots/pwa-offline.png)
-
-- Installs to the home screen and launches full-screen.
-- A **sync-status pill** in the header shows green (synced) / amber (syncing) / red (offline), with a **Sync now** action and "last synced Xs ago".
-- **Offline the phone shows the last synced board, read-only** (a banner explains why) and auto-resyncs the moment the Mac is reachable again. The Mac stays the source of truth, so a stale phone copy can never clobber it.
-
----
-
-## Getting started
-
-Requires **Node.js 18+** (developed on Node 24).
+Needs Node 18+.
 
 ```bash
 npm install
-npm run dev        # https or http://localhost:5173 — your working dev server
+npm run dev
 ```
+
+That starts the dev server at `localhost:5173` with state saved to `data/state.json`.
 
 Other scripts:
 
-| Script | What it does |
-| --- | --- |
-| `npm run dev` | Dev server with HMR + the `/api/state` persistence API. Your day-to-day. |
-| `npm run build` | Production build to `dist/`. |
-| `npm run preview` | Serve a built `dist/` locally. |
-| `npm run serve` | **Build + serve the production bundle** (`vite preview`) on `:5173`. This is the one you install on the phone — it caches the whole app for offline, and still serves `/api/state` so it syncs from this Mac. |
+- `npm run build` — production build
+- `npm run preview` — serve a build
+- `npm run serve` — build + serve the production bundle on `:5173` (this is the one you install on your phone)
 
-### Installing the PWA on a phone
+## Install on your phone
 
-The app syncs from, and is served by, your Mac. The phone must reach it over **HTTPS** (service workers require a secure context) on the same Wi-Fi.
+The phone needs to reach the Mac over HTTPS on the same Wi-Fi (service workers won't install otherwise).
 
-1. **TLS cert.** HTTPS needs a cert the phone trusts. Put a key/cert pair at `certs/dev-key.pem` and `certs/dev-cert.pem` (both git-ignored). The easy path is [`mkcert`](https://github.com/FiloSottile/mkcert): install its root CA on your Mac *and* phone once, then mint a leaf for your Mac's LAN IP into `certs/`. Without the certs, the dev/preview servers fall back to plain HTTP (no PWA install).
-2. On the Mac: **`npm run serve`** → note the `Network:` URL it prints, e.g. `https://192.168.0.105:5173/`.
-3. On the phone (same Wi-Fi), open that URL in Chrome. It should load with no cert warning.
-4. Chrome **⋮ → Add to Home screen / Install app.**
-5. Open it once while the Mac is awake so the service worker caches everything. After that it opens offline (read-only) and syncs live when the Mac is up.
+1. Put a TLS cert at `certs/dev-key.pem` and `certs/dev-cert.pem`. Easiest with [mkcert](https://github.com/FiloSottile/mkcert): install its root on the Mac and phone once, then make a cert for the Mac's LAN IP into `certs/`. Without certs it falls back to HTTP and won't install.
+2. Run `npm run serve` and note the `Network:` URL it prints (e.g. `https://192.168.0.105:5173/`).
+3. Open that URL on the phone in Chrome → menu → Add to Home screen.
+4. Open it once while the Mac is awake so it caches. After that it opens offline (read-only) and syncs when the Mac is up.
 
----
+## How it saves state
 
-## How persistence works (no real backend)
+No backend. `vite.config.js` adds a small API to the dev/preview server:
 
-There is no server app. `vite.config.js` registers a dev-server (and preview-server) middleware that exposes a small JSON API backed by files under `data/` (git-ignored):
+- `/api/state` ↔ `data/state.json` — the whole board, revision-stamped so a stale device can't overwrite newer work. Backups kept in `data/backups/`.
+- `/api/assets` ↔ `data/assets/` — pasted images, by content hash.
+- Everything is also mirrored to `localStorage`, which is what the phone shows offline.
 
-- `GET/PUT/POST /api/state` ↔ `data/state.json` — the whole app-state blob, revision-stamped. Clients send the revision they based an edit on; the server refuses a write built on a stale revision (409) so one device can't silently overwrite another's work. Rotating timestamped backups are kept under `data/backups/`.
-- `POST /api/assets` + `GET /api/assets/<hash>.<ext>` ↔ `data/assets/` — content-hashed store for images pasted into notes. Only the short URL is stored in state, never the bytes.
-- The full board is also mirrored to the browser's `localStorage` on every change — that's the fast first paint and the offline view.
+`data/` and `certs/` are git-ignored.
 
----
+## Code
 
-## Project layout
+- `src/App.jsx` — one class component, holds all state and behavior.
+- `src/components/` — the views (timeline, panels, pages).
+- `src/lib/` — time/geometry/color helpers, storage, pomodoro, todos.
+- `vite.config.js` — the dev/preview server + the state/asset API + HTTPS.
 
-```
-src/
-  App.jsx            One big class component — all state + behavior.
-  components/        Mostly-presentational views (Timeline, Header, panels, pages).
-  lib/               time/geometry/color helpers, storage + remote clients, pomodoro, todos.
-  index.css          Global resets, fonts, keyframes, markdown theme.
-public/
-  manifest.webmanifest, sw.js, icons/   PWA shell.
-vite.config.js       Dev/preview server + the /api/state & /api/assets persistence plugin + HTTPS.
-data/                (git-ignored) state.json, assets/, backups/.
-certs/               (git-ignored) dev-key.pem / dev-cert.pem for HTTPS.
-```
-
-See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the deep dive — data model, time math, the `persist()` mutation rule, interaction system, and routing. See **[CLAUDE.md](CLAUDE.md)** for how an AI agent should set up, run, and verify changes here.
-
----
-
-## Tech
-
-Vite 5 · React 18 (single class component, no router/Redux) · hash-based routing · `react-markdown` + `remark-gfm` + `rehype-highlight` for notes. Front-end only; the "backend" is a Vite middleware writing JSON to disk.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the data model and internals, and [CLAUDE.md](CLAUDE.md) for setup/run notes if you're working on it with an AI agent.
