@@ -36,12 +36,11 @@ Other scripts:
 
 ## Install on your phone
 
-The phone needs to reach the Mac over HTTPS on the same Wi-Fi (service workers won't install otherwise).
+Phone and Mac need to be on the same Wi-Fi.
 
-1. Put a TLS cert at `certs/dev-key.pem` and `certs/dev-cert.pem`. Easiest with [mkcert](https://github.com/FiloSottile/mkcert): install its root on the Mac and phone once, then make a cert for the Mac's LAN IP into `certs/`. Without certs it falls back to HTTP and won't install.
-2. Run `npm run serve` and note the `Network:` URL it prints (e.g. `https://192.168.0.105:5173/`).
-3. Open that URL on the phone in Chrome → menu → Add to Home screen.
-4. Open it once while the Mac is awake so it caches. After that it opens offline (read-only) and syncs when the Mac is up.
+1. Run `npm run serve` and note the `Network:` URL it prints (e.g. `https://192.168.0.105:5173/`).
+2. Open that URL on the phone in Chrome → menu → Add to Home screen.
+3. Open it once while the Mac is awake so it caches. After that it opens offline (read-only) and syncs when the Mac is up.
 
 ## How it saves state
 
@@ -51,13 +50,13 @@ No backend. `vite.config.js` adds a small API to the dev/preview server:
 - `/api/assets` ↔ `data/assets/` — pasted images, by content hash.
 - Everything is also mirrored to `localStorage`, which is what the phone shows offline.
 
-`data/` and `certs/` are git-ignored.
+`data/` is git-ignored.
 
 ## Code
 
 - `src/App.jsx` — one class component, holds all state and behavior.
 - `src/components/` — the views (timeline, panels, pages).
 - `src/lib/` — time/geometry/color helpers, storage, pomodoro, todos.
-- `vite.config.js` — the dev/preview server + the state/asset API + HTTPS.
+- `vite.config.js` — the dev/preview server + the state/asset API.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the data model and internals, and [CLAUDE.md](CLAUDE.md) for setup/run notes if you're working on it with an AI agent.
