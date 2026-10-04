@@ -81,3 +81,14 @@ export function HoverSelect({ style, focusStyle, children, onFocus, onBlur, ...r
     </select>
   );
 }
+
+// #link: three stitch bars — the board's own "these two are joined" language —
+// marking a task that is tied to a to-do. Sits at the start of the name on the
+// board card and on the matching to-do row.
+export const StitchMark = ({ title }) => (
+  <span className="link-stitch" title={title || 'Linked to a to-do'} aria-label="Linked to a to-do">
+    <i />
+    <i />
+    <i />
+  </span>
+);

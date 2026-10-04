@@ -37,13 +37,24 @@ export const TRACK_NAMES = [
   'Track 8',
 ];
 
+// How many whole days the canvas spans, and how many of them sit BEFORE today.
+// The window is [today - DAYS_BEFORE, today + DAYS_AFTER] inclusive, so pixel-0
+// (originMs) is local midnight DAYS_BEFORE days ago and the canvas covers
+// WINDOW_DAYS full days. Today therefore starts at DAYS_BEFORE*1440 minutes in,
+// so "now" and today's tasks are always visible and scrollable, and the user can
+// scroll DAYS_BEFORE days into the past and DAYS_AFTER days into the future.
+export const DAYS_BEFORE = 3;
+export const DAYS_AFTER = 1;
+export const WINDOW_DAYS = DAYS_BEFORE + 1 + DAYS_AFTER; // today itself + both sides
+export const MINUTES_PER_DAY = 1440;
+
 // Layout constants for the time/track axes.
 export const LAYOUT = {
   laneSize: 72,
   dateBarH: 24,
   hourBarH: 40,
   trackHeaderH: 58,
-  totalMin: 2880, // 48 hours
+  totalMin: WINDOW_DAYS * MINUTES_PER_DAY, // e.g. 5 days = 7200 minutes
 };
 
 export function genTrackId() {
@@ -73,3 +84,8 @@ export function seedTasks() {
     { id: 't6', title: 'Review & demo', lane: 0, start: 780, duration: 45, parentIds: ['t4', 't5'] },
   ];
 }
+
+// The "Breaks" timeline is special: it holds logged rest rather than work, so
+// it's pinned to the top lane, can't be deleted, and is excluded from focus
+// totals on the Completed page. Matched by name, case- and space-insensitive.
+export const isBreakTrack = (name) => (name || '').trim().toLowerCase() === 'breaks';

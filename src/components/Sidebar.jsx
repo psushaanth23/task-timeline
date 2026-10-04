@@ -13,6 +13,7 @@ export default function Sidebar(props) {
     timeColStyle,
     hourTicksV,
     dayBandsV,
+    energyBandsV = [],
     lanes,
     addTrack,
     resizeHandleStyle,
@@ -67,6 +68,10 @@ export default function Sidebar(props) {
 
       {!sidebarCollapsed && isVertical && (
         <div style={timeColStyle}>
+          {/* Energy bands: faint time-of-day gradient behind the time ruler. */}
+          {energyBandsV.map((band, i) => (
+            <div key={'energy-' + i} style={band.style} />
+          ))}
           {hourTicksV.map((tick, i) => (
             <div key={i} style={tick.style}>{tick.label}</div>
           ))}
@@ -103,6 +108,7 @@ export default function Sidebar(props) {
                 />
                 <TrackTags tags={lane.tagList} onAdd={lane.onAddTag} onOpenTag={lane.onOpenTag} />
               </div>
+              {!lane.locked && (
               <HoverButton
                 onClick={lane.onDelete}
                 title="Delete track"
@@ -137,6 +143,7 @@ export default function Sidebar(props) {
                   <line x1="14" y1="11" x2="14" y2="17" />
                 </svg>
               </HoverButton>
+              )}
             </div>
           ))}
           <HoverButton

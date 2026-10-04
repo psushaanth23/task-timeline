@@ -1,5 +1,7 @@
 import React from 'react';
 import MarkdownNotes from './MarkdownNotes.jsx';
+import RichTitle from './RichTitle.jsx';
+import { useIsNarrow } from '../lib/responsive.js';
 
 const panelStyleBase = {
   position: 'absolute',
@@ -136,10 +138,12 @@ export default function DetailPanel({
   onClose,
   onRename,
   onToggleDone,
+  onSendToBacklog,
   onSaveNotes,
   todoSnapshots,
   onToggleTodo,
 }) {
+  const narrow = useIsNarrow();
   const [editingName, setEditingName] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   const nameRef = React.useRef(null);
@@ -185,8 +189,10 @@ export default function DetailPanel({
 
   const panelStyle = {
     ...panelStyleBase,
-    width: Math.round(width) + 'px',
-    maxWidth: '92vw',
+    // Phones: the drawer takes the whole screen — a 410px panel beside a 390px
+    // board leaves nothing usable of either.
+    width: narrow ? '100%' : Math.round(width) + 'px',
+    maxWidth: narrow ? '100%' : '92vw',
     // No width transition while actively dragging so it tracks the cursor 1:1.
     transition: resizing ? 'none' : 'width .12s ease',
     // Suppress text selection during a resize drag.
@@ -194,78 +200,142 @@ export default function DetailPanel({
   };
 
   return (
-    <aside className="detail-panel" style={panelStyle} onMouseDown={(e) => e.stopPropagation()}>
-      <div
-        style={resizeHandleStyle}
-        onMouseDown={onResizeDown}
-        title="Drag to resize"
-        aria-label="Resize panel"
-        role="separator"
-        aria-orientation="vertical"
-      />
-      <div style={headerStyle}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          {editingName ? (
-            <input
-              ref={nameRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  commitName();
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setEditingName(false);
-                }
-              }}
-              aria-label="Task name"
-              style={nameInputStyle}
-            />
-          ) : (
-            <div
-              style={{ ...titleStyle, cursor: 'text' }}
-              title={(task.title || '') + '  (double-click to rename)'}
-              onDoubleClick={startNameEdit}
-            >
-              {task.title || 'Untitled task'}
-            </div>
-          )}
-          <div style={metaStyle}>{timeLabel}</div>
-        </div>
-        <button
-          type="button"
-          onClick={onToggleDone}
-          aria-label={done ? 'Reopen task' : 'Mark task done'}
-          title={done ? 'Completed — click to reopen' : 'Mark task as done'}
-          style={doneBtnStyle(done)}
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+    <aside className="detail-panel" data-task-panel="true" style={panelStyle} onMouseDown={(e) => e.stopPropagation()}>
+      {!narrow && (
+        <div
+          style={resizeHandleStyle}
+          onMouseDown={onResizeDown}
+          title="Drag to resize"
+          aria-label="Resize panel"
+          role="separator"
+          aria-orientation="vertical"
+        />
+      )}
+      {(() => {
+        // Wide: one row — name, then the actions, then close. Narrow: the name
+        // owns the first row (with close), and the actions get a full-width row
+        // of their own instead of squeezing the name into a sliver.
+        const nameBlock = (
+          <div style={{ minWidth: 0, flex: 1 }}>
+            {editingName ? (
+              <input
+                ref={nameRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commitName}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitName();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setEditingName(false);
+                  }
+                }}
+                aria-label="Task name"
+                style={nameInputStyle}
+              />
+            ) : (
+              <div
+                style={{ ...titleStyle, cursor: 'text' }}
+                title={(task.title || '') + '  (double-click to rename)'}
+                onDoubleClick={startNameEdit}
+              >
+                <RichTitle text={task.title || 'Untitled task'} />
+              </div>
+            )}
+            <div style={metaStyle}>{timeLabel}</div>
+          </div>
+        );
+
+        const doneButton = (
+          <button
+            type="button"
+            onClick={onToggleDone}
+            aria-label={done ? 'Reopen task' : 'Mark task done'}
+            title={done ? 'Completed — click to reopen' : 'Mark task as done'}
+            style={{
+              ...doneBtnStyle(done),
+              ...(narrow ? { flex: 1, height: '34px', justifyContent: 'center' } : null),
+            }}
           >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-          {done ? 'Done' : 'Mark done'}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close detail panel"
-          title="Close (Esc)"
-          style={closeBtnStyle}
-        >
-          ×
-        </button>
-      </div>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            {done ? 'Done' : 'Mark done'}
+          </button>
+        );
+
+        // #96: defer this task off the board into the backlog.
+        const backlogButton = onSendToBacklog ? (
+          <button
+            type="button"
+            onClick={onSendToBacklog}
+            aria-label="Move task to backlog"
+            title="Move to backlog"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              flex: narrow ? 1 : 'none',
+              height: narrow ? '34px' : 'auto',
+              background: 'rgba(255,183,77,.12)',
+              border: '1px solid rgba(255,183,77,.4)',
+              color: '#ffb74d',
+              borderRadius: '9px',
+              padding: narrow ? '0 10px' : '6px 11px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: "'JetBrains Mono',monospace",
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 7h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+              <path d="M3 7l2-4h14l2 4" />
+            </svg>
+            Backlog
+          </button>
+        ) : null;
+
+        const closeButton = (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close detail panel"
+            title="Close (Esc)"
+            style={narrow ? { ...closeBtnStyle, width: '34px', height: '34px' } : closeBtnStyle}
+          >
+            ×
+          </button>
+        );
+
+        if (!narrow) {
+          return (
+            <div style={headerStyle}>
+              {nameBlock}
+              {doneButton}
+              {backlogButton}
+              {closeButton}
+            </div>
+          );
+        }
+        return (
+          <div style={{ ...headerStyle, flexDirection: 'column', alignItems: 'stretch', gap: '11px', padding: '14px 13px 12px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              {nameBlock}
+              {closeButton}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {doneButton}
+              {backlogButton}
+            </div>
+          </div>
+        );
+      })()}
       <div style={bodyStyle}>
         <div style={sectionLabelStyle}>NOTES</div>
         <MarkdownNotes

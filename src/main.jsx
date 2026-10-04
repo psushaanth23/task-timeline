@@ -19,3 +19,14 @@ createRoot(document.getElementById('root')).render(
     <App {...config} />
   </React.StrictMode>,
 );
+
+// Register the PWA service worker (installable + offline app shell). Only runs
+// in a secure context (HTTPS or localhost); over plain http://<LAN-IP> the
+// browser has no serviceWorker and this quietly no-ops.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* install just won't be offered; the app still works online */
+    });
+  });
+}

@@ -16,6 +16,18 @@ export function localMidnightMs(d = new Date()) {
   return x.getTime();
 }
 
+// Epoch ms of local midnight `daysBefore` days before the given date. This is
+// the timeline's pixel-0 (origin) when the canvas extends into the past: the
+// board spans [today - daysBefore, ...], so pixel-0 is that earlier midnight.
+// Uses setDate (not raw ms arithmetic) so it lands on true local midnight across
+// DST transitions.
+export function localMidnightDaysAgoMs(daysBefore, d = new Date()) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - daysBefore);
+  return x.getTime();
+}
+
 // Minutes elapsed from a fixed origin to now. Unlike currentMin() this keeps
 // counting past 1440 across midnight (1439 -> 1440 -> 1441 ...) so nothing
 // anchored to the same origin shifts when the wall clock rolls over.
@@ -74,8 +86,13 @@ export function fmtDateTime(ms, timeFormat = '12h') {
   return months[d.getMonth()] + ' ' + d.getDate() + ', ' + fmt(d.getHours() * 60 + d.getMinutes(), timeFormat);
 }
 
+// Human-readable duration. Minutes under an hour read as "40m"; an exact hour
+// count as "2h"; anything in between as "1h 40m" (never a decimal like "1.7h",
+// which isn't comprehensible at a glance).
 export function durLabel(d) {
-  if (d < 60) return d + 'm';
-  const h = d / 60;
-  return (Number.isInteger(h) ? h : h.toFixed(1)) + 'h';
+  const mins = Math.max(0, Math.round(d));
+  if (mins < 60) return mins + 'm';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? h + 'h' : h + 'h ' + m + 'm';
 }

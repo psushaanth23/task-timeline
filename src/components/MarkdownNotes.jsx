@@ -16,6 +16,27 @@ const mdComponents = {
   a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
 };
 
+// Typographic arrows: turn a typed "->" into "→" in the rendered notes. This is a
+// remark plugin so it only rewrites mdast `text` nodes — the literal text inside
+// code spans / fenced code blocks lives in `inlineCode`/`code` nodes, which we
+// never touch, so `x -> y` in code stays verbatim. We also leave "-->" alone so
+// arrows-with-tails and code comments don't get mangled.
+function remarkArrows() {
+  const visit = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) {
+        if (child && child.type === 'text' && typeof child.value === 'string') {
+          child.value = child.value.replace(/(?<!-)->/g, '→');
+        } else {
+          visit(child);
+        }
+      }
+    }
+  };
+  return (tree) => visit(tree);
+}
+
 // Rendered Markdown, shared by the notes viewer and the archive page (#88) so
 // both use the exact same pipeline: remark-gfm (GFM tables/checklists),
 // rehype-highlight (code syntax highlighting), the safe-by-default component
@@ -58,7 +79,7 @@ export function MarkdownView({ value, onToggleTask }) {
   return (
     <div className={interactive ? 'md-body md-interactive' : 'md-body'}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkArrows]}
         rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
         components={components}
       >

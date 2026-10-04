@@ -24,6 +24,16 @@ const SECTIONS = [
     rows: [
       ['Snap', 'Start / end snap to 10-min'],
       ['While dragging', 'Live start / end time HUD'],
+      ['Board window', '3 days back → today → 1 day ahead (5 days)'],
+      ['Now', 'Scroll to the current time'],
+    ],
+  },
+  {
+    title: 'Backlog',
+    rows: [
+      ['Auto-sweep', 'Tasks that fall outside the board window move to the backlog'],
+      ['Backlog page', 'Restore one / all to now, or drop'],
+      ['Detail panel', '"Backlog" defers a task off the board'],
     ],
   },
   {

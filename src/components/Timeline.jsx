@@ -1,9 +1,12 @@
 import React from 'react';
+import { isCoarsePointer } from '../lib/responsive.js';
 import { createPortal } from 'react-dom';
-import { HoverButton } from './ui.jsx';
+import { HoverButton, StitchMark } from './ui.jsx';
 import ChainLink from './ChainLink.jsx';
 import SelectionBox from './SelectionBox.jsx';
 import TrackName from './TrackName.jsx';
+import RichTitle from './RichTitle.jsx';
+import { TrayIcon } from './BacklogPanel.jsx';
 import TrackTags from './TrackTags.jsx';
 
 // #92: custom glass hover-card that replaces the native `title` tooltip on
@@ -51,7 +54,7 @@ export function TaskHoverCard({ data, anchor }) {
           wordBreak: 'break-word',
         }}
       >
-        {data.title || 'Untitled task'}
+        <RichTitle text={data.title || 'Untitled task'} />
       </div>
       <div style={{ fontSize: '11px', color: 'rgba(231,233,238,.7)', marginBottom: '7px' }}>
         {data.rangeLabel || data.timeLabel}
@@ -97,6 +100,9 @@ export function TaskHoverCard({ data, anchor }) {
   return createPortal(card, document.body);
 }
 
+const COARSE = isCoarsePointer();
+
+
 export default function Timeline(props) {
   const {
     scrollRef,
@@ -106,6 +112,9 @@ export default function Timeline(props) {
     isVertical,
     notVertical,
     dayBands,
+    energyBands = [],
+    energyBandsV = [],
+    dayBoundaries = [],
     hourTicks,
     minorTicks = [],
     lanes,
@@ -125,6 +134,8 @@ export default function Timeline(props) {
     connectors,
     onDeleteConnector,
     chainLinks,
+    backlogGhost,
+    onToggleSeam,
     wireLive,
     pendingLive,
     taskViews,
@@ -137,6 +148,8 @@ export default function Timeline(props) {
     labelGutterStyle,
     bodyOuterStyle,
     rulerCornerStyle,
+    isNarrow = false,
+    toggleTrackGutter,
     labelGutterW = 0,
     labelsHidden = false,
     addTrack,
@@ -187,7 +200,7 @@ export default function Timeline(props) {
   // Titles wrap across as many lines as fit the card, then clamp with an
   // ellipsis (line count is per-task, tuned to the card height — see t.titleLines).
   const titleBaseStyle = {
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: 600,
     display: '-webkit-box',
     WebkitBoxOrient: 'vertical',
@@ -199,6 +212,9 @@ export default function Timeline(props) {
     width: '100%',
     textShadow: '0 1px 3px rgba(0,0,0,.7)',
   };
+  // The title shares a row with the stitch mark, so it flexes instead of
+  // claiming the full width.
+  const titleFlexStyle = { width: 'auto', flex: '1 1 0', minWidth: 0 };
   const titleEditingStyle = {
     // While renaming, render as a normal wrapping block (no line clamp) so the
     // full text is visible/editable and the caret behaves.
@@ -399,7 +415,7 @@ export default function Timeline(props) {
       className="track-row"
       style={{ ...lane.rowStyle, overflow: 'hidden' }}
       onMouseDown={lane.onRowMouseDown}
-      title="Drag to reorder · double-click name to rename"
+      title={lane.locked ? 'Breaks is pinned to the top · double-click name to rename' : 'Drag to reorder · double-click name to rename'}
     >
       <div
         data-no-drag="true"
@@ -418,6 +434,10 @@ export default function Timeline(props) {
         />
         <TrackTags tags={lane.tagList} onAdd={lane.onAddTag} onOpenTag={lane.onOpenTag} />
       </div>
+      {/* Phones: the row is name-only. The action icons left a few pixels for
+          the name ("S…") and put Delete right under the thumb. */}
+      {!isNarrow && (
+      <>
       {/* #89b: push ALL overdue (elapsed, not-done) tasks in this track past now
           in one click — a rigid translation so the earliest lands on the next
           10-min slot and gaps/order/durations are preserved. Revealed on row
@@ -433,7 +453,6 @@ export default function Timeline(props) {
         data-no-drag="true"
         className={lane.hasMissed ? 'lane-pull-btn is-active' : 'lane-pull-btn'}
         style={{
-          marginLeft: 'auto',
           flex: 'none',
           background: 'none',
           border: 'none',
@@ -452,6 +471,23 @@ export default function Timeline(props) {
           <polygon points="2 19 11 12 2 5 2 19" />
         </svg>
       </HoverButton>
+      {/* Per-track backlog tray: count badge when non-empty (hover-revealed when
+          empty); opens the right-docked backlog panel for this track. */}
+      <button
+        type="button"
+        data-no-drag="true"
+        data-panel-opener="true"
+        className={'lane-backlog-btn' + (lane.backlogCount ? ' has-items' : '') + (lane.backlogOpen ? ' is-open' : '')}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={lane.onOpenBacklog}
+        title={lane.backlogCount ? lane.backlogCount + ' in backlog' : 'Backlog (empty)'}
+        aria-label={'Open backlog' + (lane.backlogCount ? ' (' + lane.backlogCount + ')' : '')}
+        style={{ flex: 'none' }}
+      >
+        <TrayIcon size={13} />
+        {lane.backlogCount > 0 && <span className="lane-backlog-count">{lane.backlogCount}</span>}
+      </button>
+      {!lane.locked && (
       <HoverButton
         onClick={lane.onDelete}
         title="Delete track"
@@ -475,6 +511,9 @@ export default function Timeline(props) {
           <line x1="14" y1="11" x2="14" y2="17" />
         </svg>
       </HoverButton>
+      )}
+      </>
+      )}
     </div>
   );
 
@@ -503,7 +542,7 @@ export default function Timeline(props) {
                 d={c.d}
                 fill="none"
                 stroke="transparent"
-                strokeWidth={16}
+                strokeWidth={COARSE ? 30 : 16}
                 style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
                 onMouseEnter={() => setHoverConn(c.id)}
                 onMouseLeave={() => setHoverConn((h) => (h === c.id ? null : h))}
@@ -523,9 +562,6 @@ export default function Timeline(props) {
         {pendingLive && (
           <path d={pendingLive.d} fill="none" stroke="#ffd60a" strokeWidth={2.5} strokeDasharray="6 5" style={{ pointerEvents: 'none' }} />
         )}
-        {chainLinks.map((c) => (
-          <ChainLink key={c.id} x={c.x} y={c.y} vertical={isVertical} />
-        ))}
       </svg>
       {showNow && <div style={nowStyle} />}
       {/* Vertical mode: the "now" label lives in the scrolling content (same
@@ -542,6 +578,7 @@ export default function Timeline(props) {
         <div
           key={t.id}
           className="task-card"
+          data-task-id={t.id}
           style={cardStyle}
           /* #92: native `title` removed — the custom glass hover-card is the
              visible affordance. aria-label keeps the name accessible. */
@@ -552,8 +589,14 @@ export default function Timeline(props) {
           onClick={t.onClick}
           onDoubleClick={t.onDbl}
         >
-          <div data-dot="true" data-task-id={t.id} onMouseDown={t.onDotStartDown} style={t.dotStartStyle} />
+          <div className={'task-dot lead' + (isVertical ? ' v' : '')} data-dot="true" data-task-id={t.id} onMouseDown={t.onDotStartDown} style={t.dotStartStyle} />
+          <div className="task-title-row">
+          {t.linkedTodo && <StitchMark />}
           <div
+            /* Remount when leaving/entering rename: the editor writes its text
+               imperatively, so reusing the node would leave that stale text next
+               to the freshly rendered title (duplicate text, raw "->"). */
+            key={t.editing ? 'title-edit' : 'title-view'}
             ref={t.editing ? editRef : null}
             contentEditable={t.editing}
             suppressContentEditableWarning
@@ -564,20 +607,21 @@ export default function Timeline(props) {
             onBlur={t.editing ? (e) => onTitleBlur(t.id, e) : undefined}
             style={
               t.editing
-                ? { ...titleBaseStyle, ...titleEditingStyle }
+                ? { ...titleBaseStyle, ...titleFlexStyle, ...titleEditingStyle }
                 : t.narrow && !peeking
-                  ? { ...titleBaseStyle, display: 'none' }
+                  ? { ...titleBaseStyle, ...titleFlexStyle, display: 'none' }
                   : t.narrow && peeking
-                    ? { ...titleBaseStyle, whiteSpace: 'nowrap', overflow: 'visible' }
-                    : { ...titleBaseStyle, WebkitLineClamp: t.titleLines }
+                    ? { ...titleBaseStyle, ...titleFlexStyle, whiteSpace: 'nowrap', overflow: 'visible' }
+                    : { ...titleBaseStyle, ...titleFlexStyle, WebkitLineClamp: t.titleLines }
             }
           >
-            {t.editing || (t.narrow && !peeking) ? null : t.title}
+            {t.editing || (t.narrow && !peeking) ? null : <RichTitle text={t.title} />}
+          </div>
           </div>
           {!t.narrow && (
             <div
               style={{
-                fontSize: '11px',
+                fontSize: '10px',
                 opacity: 0.9,
                 fontFamily: "'JetBrains Mono',monospace",
                 whiteSpace: 'nowrap',
@@ -591,11 +635,30 @@ export default function Timeline(props) {
           )}
           {t.narrow && !t.editing && !peeking && (
             <div data-no-drag="true" onMouseDown={(e) => e.stopPropagation()} style={t.externalLabelStyle}>
-              {t.title}
+              <RichTitle text={t.title} />
             </div>
           )}
-          <div data-dot="true" data-task-id={t.id} onMouseDown={t.onDotEndDown} style={t.dotEndStyle} />
-          <div onMouseDown={t.onResizeDown} style={t.resizeHandleStyle} />
+          <div className={'task-dot trail' + (isVertical ? ' v' : '')} data-dot="true" data-task-id={t.id} onMouseDown={t.onDotEndDown} style={t.dotEndStyle} />
+          <div className={'task-resize lead' + (isVertical ? ' v' : '')} onMouseDown={t.onResizeStartDown} style={t.resizeHandleStyleStart} />
+          <div className={'task-resize trail' + (isVertical ? ' v' : '')} onMouseDown={t.onResizeDown} style={t.resizeHandleStyle} />
+          {!t.done && (
+            <button
+              type="button"
+              className="task-backlog-btn"
+              data-no-drag="true"
+              title="Move to backlog"
+              aria-label="Move task to backlog"
+              onMouseDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onClick={t.onSendToBacklog}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v8" />
+                <path d="M8.5 7.5 12 11l3.5-3.5" />
+                <path d="M3 14h5l1.5 2.5h5L16 14h5v6H3z" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             className={t.hasNotes ? 'task-note-btn has-notes' : 'task-note-btn'}
@@ -613,10 +676,53 @@ export default function Timeline(props) {
               <line x1="8" y1="17" x2="13" y2="17" />
             </svg>
           </button>
+          {/* Bottom-right corner: toggle the Claude-session marker. Always
+              visible once set; revealed on card hover otherwise. */}
+          <button
+            type="button"
+            className={t.claudeSession ? 'task-claude-btn is-on' : 'task-claude-btn'}
+            data-no-drag="true"
+            title={t.claudeSession ? 'Claude session — click to unset' : 'Mark as Claude session'}
+            aria-label={t.claudeSession ? 'Unmark Claude session' : 'Mark as Claude session'}
+            aria-pressed={!!t.claudeSession}
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onClick={t.onToggleClaude}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 2.5c.5 4.2 2.8 6.6 7 7.2-4.2.6-6.5 3-7 7.2-.5-4.2-2.8-6.6-7-7.2 4.2-.6 6.5-3 7-7.2z" />
+              <path d="M19 15.5c.25 1.9 1.3 3 3 3.3-1.7.3-2.75 1.4-3 3.3-.25-1.9-1.3-3-3-3.3 1.7-.3 2.75-1.4 3-3.3z" />
+            </svg>
+          </button>
           {renderHud(t.hud)}
         </div>
         );
       })}
+      {backlogGhost && <div style={backlogGhost.style}>+ {backlogGhost.title}</div>}
+      {/* Seam glyphs (link/detach toggles) live in their own overlay ABOVE the
+          task cards so they're clickable — cards sit at a higher z-index than the
+          connector svg, which would otherwise cover the on-edge glyph. The svg
+          itself is pointer-transparent; each ChainLink re-enables events only on
+          its small hit-target, so dragging cards in empty space is unaffected. */}
+      <svg
+        width={svgWidthNum}
+        height={svgHeightNum}
+        style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 15, overflow: 'visible' }}
+      >
+        {chainLinks.map((c) => (
+          <ChainLink
+            key={c.id}
+            x={c.x}
+            y={c.y}
+            vertical={isVertical}
+            detached={c.detached}
+            span={c.span}
+            onToggle={
+              c.aId && onToggleSeam ? () => onToggleSeam(c.aId, c.bId) : undefined
+            }
+          />
+        ))}
+      </svg>
       <SelectionBox rect={marqueeRect} />
       {hoverCard &&
         (() => {
@@ -631,6 +737,41 @@ export default function Timeline(props) {
       <div style={rulerStyle}>
         {notVertical && labelGutterW > 0 && (
           <div style={rulerCornerStyle}>
+            {/* Phones: fold the whole label gutter from here — at the top, well
+                clear of the per-row delete buttons. */}
+            {isNarrow && toggleTrackGutter && (
+              <button
+                type="button"
+                data-no-drag="true"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleTrackGutter();
+                }}
+                title="Hide track labels"
+                aria-label="Hide track labels"
+                aria-expanded="true"
+                style={{
+                  flex: 'none',
+                  width: '24px',
+                  height: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  borderRadius: '6px',
+                  border: '1px solid rgba(165,180,252,.4)',
+                  background: 'rgba(129,140,248,.12)',
+                  color: '#a5b4fc',
+                  cursor: 'pointer',
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M15 6l-6 6 6 6" />
+                </svg>
+              </button>
+            )}
             <span
               style={{
                 fontSize: '11px',
@@ -675,6 +816,11 @@ export default function Timeline(props) {
         )}
         {notVertical && (
           <>
+            {/* Energy bands: a faint time-of-day gradient painted across the hour
+                strip of the top ruler (behind the day + hour labels). */}
+            {energyBands.map((band, i) => (
+              <div key={'energy-' + i} style={band.style} />
+            ))}
             {dayBands.map((band, i) => (
               <div key={i} style={band.style}>{band.label}</div>
             ))}
@@ -713,6 +859,21 @@ export default function Timeline(props) {
                   />
                   <TrackTags tags={lane.tagList} onAdd={lane.onAddTag} onOpenTag={lane.onOpenTag} />
                 </div>
+                {/* Per-track backlog tray: count badge when non-empty (hover-revealed when
+                    empty); opens the right-docked backlog panel for this track. */}
+                <button
+                  type="button"
+                  data-no-drag="true"
+                  className={'lane-backlog-btn' + (lane.backlogCount ? ' has-items' : '') + (lane.backlogOpen ? ' is-open' : '')}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={lane.onOpenBacklog}
+                  title={lane.backlogCount ? lane.backlogCount + ' in backlog' : 'Backlog (empty)'}
+                  aria-label={'Open backlog' + (lane.backlogCount ? ' (' + lane.backlogCount + ')' : '')}
+                  style={{ flex: 'none' }}
+                >
+                  <TrayIcon size={13} />
+                  {lane.backlogCount > 0 && <span className="lane-backlog-count">{lane.backlogCount}</span>}
+                </button>
                 <HoverButton
                   onClick={lane.onDelete}
                   title="Delete track"
@@ -769,6 +930,13 @@ export default function Timeline(props) {
               <div key={i} style={row.style} />
             ))}
             <div style={gridOverlayStyle} />
+            {dayBoundaries.map((d) => (
+              <React.Fragment key={d.id}>
+                <div style={d.lineStyle} />
+                <div style={d.endStyle}>{d.endLabel}</div>
+                <div style={d.startStyle}>{d.startLabel}</div>
+              </React.Fragment>
+            ))}
             {/* Track divider LINES (#75): decorative glowing separators
                 (pointer-events:none). The edge handles live in the gutter. The
                 divider-line class flashes on mount for #93 add feedback. */}
@@ -784,6 +952,13 @@ export default function Timeline(props) {
             <div key={i} style={row.style} />
           ))}
           <div style={gridOverlayStyle} />
+          {dayBoundaries.map((d) => (
+              <React.Fragment key={d.id}>
+                <div style={d.lineStyle} />
+                <div style={d.endStyle}>{d.endLabel}</div>
+                <div style={d.startStyle}>{d.startLabel}</div>
+              </React.Fragment>
+            ))}
           {/* Vertical mode: divider edges sit along the top edge inside content. */}
           {dividerAdds.map((a) => renderAddEdge(a))}
           {dividers.map((d) => (

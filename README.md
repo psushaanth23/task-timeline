@@ -1,102 +1,130 @@
 # Task Timeline
 
-A working UI prototype of a timeline-based to-do / task planner. Tasks live on a horizontal (or vertical) 48-hour timeline, organized into color-coded tracks, with drag-to-move cards and visual dependency links.
+A single-user **timeline task planner** — tasks are cards on a fixed **48-hour** timeline, grouped into color-coded tracks (swimlanes), with drag-to-move/resize, dependency wiring, Markdown notes, a to-do planner, a Pomodoro timer, and a daily "completed" log. It's a **Vite + React 18** app that persists to a tiny on-disk JSON API served by the dev server, and installs as an **offline-capable PWA** on your phone.
 
-It was ported from a Salesforce DesignComponent (DC) HTML prototype into a real, runnable **Vite + React** app. There is no backend — all data and view preferences persist to the browser's `localStorage`.
+The Mac you run it on is the source of truth; a phone just syncs and can view the last-synced board even when the Mac is asleep.
 
-## Features
+> **Screenshots:** image slots are stubbed below (`docs/screenshots/*.png`). Drop your own captures in — crop/sanitize as you like — and they'll render here.
 
-- **48-hour timeline** spanning 2 days, with hour ticks and day bands. Switch between horizontal and vertical orientation.
-- **Live "now" indicator** — a glowing marker tracks the current time and auto-scrolls into view.
-- **Tracks (swimlanes)** — rename inline, cycle the color by clicking the dot, reorder by dragging the handle, and add or delete tracks.
-- **Draggable task cards** — double-click empty space to create a task, drag to move across time and between tracks. Duration, start time, and track are chosen in a modal.
-- **Marquee (rubber-band) selection** — click and drag on empty timeline space to draw a selection rectangle; every task fully enclosed by the rectangle becomes selected and highlighted. Clicking empty space without dragging clears the selection.
-- **Group move** — with multiple tasks selected, dragging any selected task moves the whole selection together. Group moves are constrained to the time axis only, so tasks keep their tracks.
-- **Resize duration** — hover the trailing edge or corner of a task card and drag to change its duration along the time axis. The start/opposite dots still initiate dependency links.
-- **Mark done (double-click)** — double-clicking a task toggles its "done" state. A done task renders desaturated/blacked-out and disabled-looking, and is dropped from the current selection. Double-click again to un-complete it. (Creating tasks is still done by double-clicking empty space.)
-- **Edge auto-scroll** — while dragging a task, moving a selection, or resizing, moving near the left or right edge of the timeline auto-scrolls the view in that direction so you can drag across long distances.
-- **Density control (zoom bar)** — a toolbar above the timeline with a slider and − / + buttons compresses or stretches the time (X) axis. The chosen density is remembered across reloads.
-- **Dependencies** — drag from a card's start/end dot onto another card to link them, or pick "Depends on" tasks in the modal. Dependencies render as dashed bezier connector curves. When a parent task's end meets a child task's start exactly (adjacent, same track, dots colliding), the connector is drawn as a chain-link glyph to signify a stronger "one-after-another" bond instead of a curve.
-- **Progress-aware styling** — task cards fade or brighten based on progress versus the current time, and pulse when urgent.
-- **Persistent state** — orientation, sidebar width, collapse state, timeline density, and all task/track data are saved to `localStorage`.
+---
+
+## Screens & features
+
+### Timeline board
+![Timeline board](docs/screenshots/timeline.png)
+
+- **48-hour canvas** anchored to local midnight of *today*, with 10-minute ruler ticks, hour labels, and day bands. Re-anchors automatically at midnight so dates never go stale.
+- **Horizontal or vertical** orientation (time → right, or time → down with tracks as columns).
+- **Live "now" line** — a glowing marker tracks the current time and auto-scrolls into view ("Jump to now").
+- **Tracks (swimlanes)** — rename inline, cycle color via the dot, reorder by dragging the handle, add/delete, and drop visual **dividers** between them.
+- **Task cards** — double-click empty space to create; drag to move across time and tracks; drag the trailing edge/corner to resize duration. Everything snaps to a 10-minute grid.
+- **Marquee select + group move** — rubber-band a region to select; drag any selected card to move the whole group (time-axis only, tracks preserved).
+- **Dependencies** — drag from a card's start/end dot onto another card, or use the two-click connect gesture. Rendered as dashed bezier curves; back-to-back same-track links collapse into a chain-link glyph.
+- **Progress-aware styling** — cards fade/brighten against the current time and pulse when urgent. Double-click (triple-click on a card) toggles **done**.
+- **Density zoom**, **edge auto-scroll** while dragging, **undo/redo**, and task **copy/paste**.
+
+### Task detail + Markdown notes
+![Task detail panel with Markdown notes](docs/screenshots/notes.png)
+
+- Right-docked, resizable detail panel per task.
+- **Markdown notes** (GFM): code highlighting, interactive checkbox to-dos, and pasted-image upload. Raw HTML is intentionally disabled — safe by default.
+
+### To-do planner
+![To-do planner panel](docs/screenshots/todos.png)
+
+- A nestable to-do tree in a side panel. A top-level item with children becomes a **group root**.
+- **Schedule to a timeline** — add a to-do to a track and it becomes a board task.
+- Assign a group root to a timeline, then one-click **+** on any child adds it straight to that timeline (long-press to pick a different track).
+- **Soft delete + Deleted bin** — deleting hides a to-do rather than destroying it; a "deleted" view lets you **restore**, and items are purged 7 days after deletion.
+- Show/hide completed to-dos.
+
+### Pomodoro timer
+![Pomodoro timer in the header](docs/screenshots/pomodoro.png)
+
+- Header-centered live timer: **Focus (25m) → Short break → Long break** (long break after every 4 focus sessions).
+- The header glows the phase color (teal focus / amber break) so the current phase is glanceable. Bind a task to focus on it.
+
+### Completed log
+![Completed page with per-day summaries](docs/screenshots/completed.png)
+
+- A dated log of finished tasks with per-day productivity summaries.
+- **Collapse toggle** — "Summaries only" hides the tasks so you can scroll day-by-day and see how productive each day was.
+
+### Backlog, Archive & Tags
+![Backlog and tag views](docs/screenshots/backlog-tags.png)
+
+- **Backlog** — tasks that age off the 48h canvas are swept here (grouped by scheduled day) instead of vanishing; restore-to-now or drop.
+- **Archive** — soft-deleted tracks (with their tasks + notes); restore or purge.
+- **Tags** — a global tag pool assigned to tracks, a tag manager, and a tasks-by-tag view.
+
+### Install on your phone (PWA + offline)
+![Installed PWA on a phone, offline banner](docs/screenshots/pwa-offline.png)
+
+- Installs to the home screen and launches full-screen.
+- A **sync-status pill** in the header shows green (synced) / amber (syncing) / red (offline), with a **Sync now** action and "last synced Xs ago".
+- **Offline the phone shows the last synced board, read-only** (a banner explains why) and auto-resyncs the moment the Mac is reachable again. The Mac stays the source of truth, so a stale phone copy can never clobber it.
+
+---
 
 ## Getting started
 
-Requires Node.js. Install dependencies and start the dev server:
+Requires **Node.js 18+** (developed on Node 24).
 
 ```bash
 npm install
-npm run dev
+npm run dev        # https or http://localhost:5173 — your working dev server
 ```
 
 Other scripts:
 
-```bash
-npm run build      # production build
-npm run preview    # preview the production build locally
-```
-
-## Project structure
-
-```
-task-timeline/
-  index.html
-  package.json
-  vite.config.js
-  src/
-    main.jsx            # entry, mounts <App> with config props
-    index.css           # global styles, fonts, keyframes, scrollbar, hover helpers
-    App.jsx             # main component: state, handlers, layout, computeVals()
-    lib/
-      constants.js      # layout constants, color palette, seed tasks/tracks
-      time.js           # time formatting/parsing helpers
-      color.js          # hexToRgba
-      geometry.js       # bezier path builder
-      autoscroll.js     # edge auto-scroll controller
-      storage.js        # localStorage load/save
-    components/
-      ui.jsx            # HoverButton/HoverInput/HoverSelect/HoverDiv (hover & focus styling)
-      Header.jsx        # top bar with actions
-      ZoomBar.jsx       # density toolbar (slider + / - to scale the time axis)
-      Sidebar.jsx       # track list / time gutter
-      Timeline.jsx      # ruler + board + task cards + connectors
-      SelectionBox.jsx  # marquee (rubber-band) selection rectangle
-      ChainLink.jsx     # chain glyph for back-to-back dependencies
-      TaskModal.jsx     # create/edit task dialog
-```
-
-## Usage / interactions
-
-| Action | How |
+| Script | What it does |
 | --- | --- |
-| Add a task | Double-click empty space on the timeline |
-| Mark a task done / undone | Double-click a task card to toggle its "done" state |
-| Move a task | Drag a card across time or between tracks |
-| Select multiple tasks | Click and drag on empty space to draw a marquee; tasks fully enclosed are selected |
-| Clear the selection | Click empty space without dragging |
-| Move a group of tasks | Drag any selected task; the whole selection moves together along the time axis |
-| Resize a task's duration | Drag the trailing edge or corner of a task card |
-| Drag across long distances | Drag near the left/right edge to auto-scroll the timeline |
-| Change timeline density | Use the zoom bar's slider or − / + buttons above the timeline |
-| Link tasks | Drag from a card's start/end dot onto another card (or set "Depends on" in the modal) |
-| Recolor a track | Click the track's color dot to cycle colors |
-| Rename a track | Click the track name and edit inline |
-| Reorder tracks | Drag the track's handle |
-| Add / delete tracks | Use the track list controls in the sidebar |
-| Change view & actions | Use the buttons in the header (orientation, collapse, etc.) |
+| `npm run dev` | Dev server with HMR + the `/api/state` persistence API. Your day-to-day. |
+| `npm run build` | Production build to `dist/`. |
+| `npm run preview` | Serve a built `dist/` locally. |
+| `npm run serve` | **Build + serve the production bundle** (`vite preview`) on `:5173`. This is the one you install on the phone — it caches the whole app for offline, and still serves `/api/state` so it syncs from this Mac. |
 
-## Configuration
+### Installing the PWA on a phone
 
-Props are passed to `<App>` in `src/main.jsx`:
+The app syncs from, and is served by, your Mac. The phone must reach it over **HTTPS** (service workers require a secure context) on the same Wi-Fi.
 
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `zoom` | number | `2` | Initial/default density in pixels per minute (horizontal scale of the timeline). The on-screen density slider (zoom bar) overrides this and persists the chosen value to `localStorage`. |
-| `showDependencies` | boolean | `true` | Whether dependency connector curves are rendered |
-| `timeFormat` | `'12h'` \| `'24h'` | `'12h'` | Clock format used throughout the UI |
+1. **TLS cert.** HTTPS needs a cert the phone trusts. Put a key/cert pair at `certs/dev-key.pem` and `certs/dev-cert.pem` (both git-ignored). The easy path is [`mkcert`](https://github.com/FiloSottile/mkcert): install its root CA on your Mac *and* phone once, then mint a leaf for your Mac's LAN IP into `certs/`. Without the certs, the dev/preview servers fall back to plain HTTP (no PWA install).
+2. On the Mac: **`npm run serve`** → note the `Network:` URL it prints, e.g. `https://192.168.0.105:5173/`.
+3. On the phone (same Wi-Fi), open that URL in Chrome. It should load with no cert warning.
+4. Chrome **⋮ → Add to Home screen / Install app.**
+5. Open it once while the Mac is awake so the service worker caches everything. After that it opens offline (read-only) and syncs live when the Mac is up.
 
-## Notes
+---
 
-This is a front-end prototype. There is no server or database — all tasks, tracks, and view preferences are stored in the browser's `localStorage`, so data persists across reloads on the same browser but is not synced anywhere.
+## How persistence works (no real backend)
 
-License: MIT
+There is no server app. `vite.config.js` registers a dev-server (and preview-server) middleware that exposes a small JSON API backed by files under `data/` (git-ignored):
+
+- `GET/PUT/POST /api/state` ↔ `data/state.json` — the whole app-state blob, revision-stamped. Clients send the revision they based an edit on; the server refuses a write built on a stale revision (409) so one device can't silently overwrite another's work. Rotating timestamped backups are kept under `data/backups/`.
+- `POST /api/assets` + `GET /api/assets/<hash>.<ext>` ↔ `data/assets/` — content-hashed store for images pasted into notes. Only the short URL is stored in state, never the bytes.
+- The full board is also mirrored to the browser's `localStorage` on every change — that's the fast first paint and the offline view.
+
+---
+
+## Project layout
+
+```
+src/
+  App.jsx            One big class component — all state + behavior.
+  components/        Mostly-presentational views (Timeline, Header, panels, pages).
+  lib/               time/geometry/color helpers, storage + remote clients, pomodoro, todos.
+  index.css          Global resets, fonts, keyframes, markdown theme.
+public/
+  manifest.webmanifest, sw.js, icons/   PWA shell.
+vite.config.js       Dev/preview server + the /api/state & /api/assets persistence plugin + HTTPS.
+data/                (git-ignored) state.json, assets/, backups/.
+certs/               (git-ignored) dev-key.pem / dev-cert.pem for HTTPS.
+```
+
+See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the deep dive — data model, time math, the `persist()` mutation rule, interaction system, and routing. See **[CLAUDE.md](CLAUDE.md)** for how an AI agent should set up, run, and verify changes here.
+
+---
+
+## Tech
+
+Vite 5 · React 18 (single class component, no router/Redux) · hash-based routing · `react-markdown` + `remark-gfm` + `rehype-highlight` for notes. Front-end only; the "backend" is a Vite middleware writing JSON to disk.
