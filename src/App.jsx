@@ -6,6 +6,7 @@ import { isNarrowNow, onNarrowChange, isCoarsePointer } from './lib/responsive.j
 import { installTouchDrag } from './lib/touchDrag.js';
 import { PALETTE, LAYOUT, DAYS_BEFORE, WINDOW_DAYS, MINUTES_PER_DAY, genTrackId, genTagId, makeTracks, seedTasks, isBreakTrack } from './lib/constants.js';
 import TagPicker from './components/TagPicker.jsx';
+import TrackColorPicker from './components/TrackColorPicker.jsx';
 import ArchivePage from './components/ArchivePage.jsx';
 import BacklogPage from './components/BacklogPage.jsx';
 import TagManagerPage from './components/TagManagerPage.jsx';
@@ -97,6 +98,8 @@ export default class App extends React.Component {
       drag: null,
       groupDrag: null,
       resize: null,
+      // ⌥+wheel length nudge preview: { id, curDuration }; committed on idle.
+      wheelResize: null,
       marquee: null,
       selection: [],
       trackDrag: null,
@@ -105,6 +108,8 @@ export default class App extends React.Component {
       // on track.tagIds. tagPicker holds the open popover's { trackIndex, rect }.
       tags: [],
       tagPicker: null,
+      // Open track color-picker popover's { trackIndex, rect } (anchored to the dot).
+      trackColorPicker: null,
       // Soft-delete archive: deleted tracks are moved here (with their tasks,
       // tagIds and a deletedAt stamp) instead of being destroyed, and are
       // viewable/restorable from the #/archive page.
@@ -310,6 +315,9 @@ export default class App extends React.Component {
   // re-clicking the opener doesn't fire both this close AND the opener's toggle
   // (which would cancel out). Nothing open => no-op.
   onDocPointerDown = (e) => {
+    // A pointer-down starts a drag/resize/click — land any pending wheel nudge
+    // first so it can't later overwrite what the pointer does.
+    if (this.state.wheelResize) this.commitWheelResize();
     const { pomodoroOpen, backlogTrackId, panelTaskId } = this.state;
     if (!pomodoroOpen && !backlogTrackId && !panelTaskId) return;
     const t = e.target;
@@ -618,9 +626,13 @@ export default class App extends React.Component {
     // Scroll-aware date indicator: the scroller is scrollRef in horizontal and
     // boardRef in vertical, so listen on both (passive; the handler is a no-op
     // on whichever isn't overflowing).
-    [this.scrollRef.current, this.boardRef.current].forEach((el) => {
-      if (el) el.addEventListener('scroll', this.onBoardScroll, { passive: true });
-    });
+    this.bindBoardScroll();
+    // Wheel-to-resize (see onBoardWheel). On WINDOW, not the board: the board
+    // element is replaced whenever a page (Completed, Backlog…) is visited, and
+    // a listener on the old node silently stops firing. Non-passive so it can
+    // cancel the board scroll — and the browser's own ⌥+wheel = history
+    // back/forward (Firefox/Zen), which flipped Timeline ↔ Completed.
+    window.addEventListener('wheel', this.onBoardWheel, { passive: false });
     // Touchscreens: long-press a card to drag it, grab a dot/edge to wire or
     // resize. Bridges to the same mouse handlers (see lib/touchDrag.js).
     this.stopTouchDrag = installTouchDrag(document);
@@ -947,9 +959,11 @@ export default class App extends React.Component {
     document.removeEventListener('mouseup', this.onWireUp);
     document.removeEventListener('mousemove', this.onSidebarResizeMove);
     document.removeEventListener('mouseup', this.onSidebarResizeUp);
-    [this.scrollRef.current, this.boardRef.current].forEach((el) => {
+    (this._scrollEls || []).forEach((el) => {
       if (el) el.removeEventListener('scroll', this.onBoardScroll);
     });
+    window.removeEventListener('wheel', this.onBoardWheel);
+    clearTimeout(this._wheelResizeTimer);
     if (this._scrollRaf) cancelAnimationFrame(this._scrollRaf);
     clearTimeout(this._scrollPillTimer);
     clearInterval(this.pomoTimer);
@@ -1007,6 +1021,8 @@ export default class App extends React.Component {
   }
 
   undo() {
+    // Pending wheel nudge → commit it first so ⌘Z undoes it, not the step before.
+    if (this.state.wheelResize) this.commitWheelResize();
     if (this.isReadOnly()) {
       this.flashReadOnly();
       return;
@@ -1035,6 +1051,7 @@ export default class App extends React.Component {
   }
 
   redo() {
+    if (this.state.wheelResize) this.commitWheelResize();
     if (this.isReadOnly()) {
       this.flashReadOnly();
       return;
@@ -1239,7 +1256,18 @@ export default class App extends React.Component {
     );
   }
 
-  cycleTrackColor(index) {
+  openTrackColorPicker(trackIndex, rect) {
+    this.setState({ trackColorPicker: { trackIndex, rect } });
+  }
+
+  closeTrackColorPicker() {
+    this.setState({ trackColorPicker: null });
+  }
+
+  // Set a track's color to any hex (a palette swatch or a custom wheel pick).
+  // Undoable + persisted via the normal persist() path.
+  setTrackColor(index, color) {
+    if (!color) return;
     const tracks = this.state.tracks.slice();
     while (tracks.length <= index)
       tracks.push({
@@ -1248,9 +1276,8 @@ export default class App extends React.Component {
         color: this.palette[tracks.length % this.palette.length],
         tagIds: [],
       });
-    const cur = tracks[index].color;
-    const idx = this.palette.indexOf(cur);
-    tracks[index] = { ...tracks[index], color: this.palette[(idx + 1) % this.palette.length] };
+    if (tracks[index].color === color) return;
+    tracks[index] = { ...tracks[index], color };
     this.persist(null, tracks);
   }
 
@@ -1374,6 +1401,7 @@ export default class App extends React.Component {
   // via a Back button or browser history) remounts the timeline scrolled to its
   // start, so re-centre on now once it has laid out.
   componentDidUpdate(prevProps, prevState) {
+    this.bindBoardScroll();
     if (prevState.route !== 'timeline' && this.state.route === 'timeline') {
       const doJump = () => {
         if (this.state.route === 'timeline') this.jumpToNow(false);
@@ -2785,6 +2813,61 @@ export default class App extends React.Component {
     return seen;
   }
 
+  // Tasks hanging off `id`'s RIGHT edge, transitively: same-lane neighbours
+  // whose start touches its end (seam not detached) and dependency children
+  // (parentIds). They ride along rigidly when that right edge is resized, so
+  // the chain after it stays attached; tasks attached to its LEFT edge stay
+  // put (the left end doesn't move).
+  downstreamIds(id) {
+    const tasks = this.state.tasks;
+    const byId = {};
+    tasks.forEach((t) => (byId[t.id] = t));
+    const out = new Set();
+    const stack = [id];
+    while (stack.length) {
+      const a = byId[stack.pop()];
+      if (!a) continue;
+      const end = a.start + a.duration;
+      for (const b of tasks) {
+        if (b.id === id || out.has(b.id)) continue;
+        const child = (b.parentIds || []).includes(a.id);
+        const seam = b.lane === a.lane && b.start === end && !this.seamDetached(a, b);
+        if (child || seam) {
+          out.add(b.id);
+          stack.push(b.id);
+        }
+      }
+    }
+    return [...out];
+  }
+
+  // Longest duration an end-edge resize may reach: the task itself must end on
+  // the board, and so must every follower after it shifts by the same delta.
+  maxEndDuration(task, follow) {
+    let max = LAYOUT.totalMin - task.start;
+    (follow || []).forEach((fid) => {
+      const f = this.state.tasks.find((t) => t.id === fid);
+      if (f) max = Math.min(max, task.duration + (LAYOUT.totalMin - (f.start + f.duration)));
+    });
+    return Math.max(SNAP_MIN, max);
+  }
+
+  // Apply an end-edge resize: `id` gets the new duration and its right-edge
+  // followers shift by the same delta.
+  applyEndResize(tasks, id, duration, follow) {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return tasks;
+    const delta = duration - task.duration;
+    const fset = new Set(follow || []);
+    return tasks.map((t) =>
+      t.id === id
+        ? { ...t, duration }
+        : delta && fset.has(t.id)
+          ? { ...t, start: Math.max(0, t.start + delta) }
+          : t,
+    );
+  }
+
   startSingleDrag(task, e) {
     const p = this.pointerToContent(e.clientX, e.clientY);
     if (!p) return;
@@ -2947,6 +3030,7 @@ export default class App extends React.Component {
         startClientY: e.clientY,
         curStart: task.start,
         curDuration: task.duration,
+        follow: edge === 'end' ? this.downstreamIds(task.id) : [],
         moved: false,
       },
     });
@@ -2971,7 +3055,7 @@ export default class App extends React.Component {
       return;
     }
     let dur = this.snapTime(p.time - task.start);
-    dur = Math.max(SNAP_MIN, Math.min(LAYOUT.totalMin - task.start, dur));
+    dur = Math.max(SNAP_MIN, Math.min(this.maxEndDuration(task, r.follow), dur));
     this.setState({ resize: { ...r, curDuration: dur, moved } });
   }
 
@@ -2979,16 +3063,153 @@ export default class App extends React.Component {
     const r = this.state.resize;
     if (r && r.moved) {
       this._dragJustHappened = true;
-      const tasks = this.state.tasks.map((t) =>
-        t.id === r.id
-          ? r.edge === 'start'
-            ? { ...t, start: r.curStart, duration: r.curDuration }
-            : { ...t, duration: r.curDuration }
-          : t,
-      );
+      const tasks =
+        r.edge === 'start'
+          ? this.state.tasks.map((t) =>
+              t.id === r.id ? { ...t, start: r.curStart, duration: r.curDuration } : t,
+            )
+          : this.applyEndResize(this.state.tasks, r.id, r.curDuration, r.follow);
       this.persist(tasks);
     }
     this.setState({ resize: null });
+  }
+
+  // The scroll-aware date indicator listens on whichever of scrollRef /
+  // boardRef overflows. Both nodes are recreated when the board remounts
+  // (returning from Completed/Backlog/…, orientation flip), so re-attach
+  // whenever the elements change. Cheap identity check on every update.
+  bindBoardScroll() {
+    const els = [this.scrollRef.current, this.boardRef.current];
+    const prev = this._scrollEls || [];
+    if (els[0] === prev[0] && els[1] === prev[1]) return;
+    prev.forEach((el) => {
+      if (el) el.removeEventListener('scroll', this.onBoardScroll);
+    });
+    els.forEach((el) => {
+      if (el) el.addEventListener('scroll', this.onBoardScroll, { passive: true });
+    });
+    this._scrollEls = els;
+  }
+
+  // Wheel-to-resize: nudge a task's END by SNAP_MIN per notch.
+  //   • Click a task (selects it), then scroll over it — plain wheel.
+  //   • Or hold ⌥ and scroll over any task, no click needed.
+  // Up/right lengthens, down/left shortens. Everywhere else the wheel scrolls
+  // as usual. Steps preview live in `wheelResize` and land as ONE undo entry
+  // after a short idle (or on the next pointer-down / undo).
+  //
+  // Decisions are made per GESTURE (a run of wheel events with <200ms gaps),
+  // not per event: a scroll that began on empty board stays a scroll even if
+  // its momentum drifts over the selected task, and a resize keeps going even
+  // after the shrinking card slides out from under the pointer.
+  onBoardWheel = (e) => {
+    // Pinch-zoom (ctrl), ⌘ and Shift (horizontal scroll with a mouse) always
+    // keep their native behaviour — Shift is also the escape hatch to scroll
+    // the board while the pointer rests on the selected task.
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const now = performance.now();
+    const newGesture = now - (this._wheelLastTs || 0) > 200 || e.altKey !== this._wheelAlt;
+    this._wheelLastTs = now;
+    this._wheelAlt = e.altKey;
+    if (newGesture) this._wheelTaskId = this.wheelTargetFor(e);
+    const id = this._wheelTaskId;
+    const task = id != null && this.state.route === 'timeline' && this.state.tasks.find((t) => t.id === id);
+    if (!task || this.state.drag || this.state.resize || this.state.groupDrag || this.state.editingId === id) {
+      this._wheelTaskId = null;
+      // ⌥+wheel isn't a resize here: still swallow the browser's ⌥+wheel
+      // default (history back/forward) and scroll like a plain wheel would.
+      if (e.altKey) {
+        e.preventDefault();
+        this.scrollNearest(e);
+      }
+      return;
+    }
+    e.preventDefault();
+    if (this.isReadOnly()) {
+      if (newGesture) this.flashReadOnly();
+      return;
+    }
+    let wr = this.state.wheelResize;
+    if (wr && wr.id !== task.id) {
+      this.commitWheelResize();
+      wr = null;
+    }
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    const dx = e.deltaX * unit;
+    const dy = e.deltaY * unit;
+    const delta = Math.abs(dx) > Math.abs(dy) ? dx : -dy;
+    clearTimeout(this._wheelResizeTimer);
+    this._wheelResizeTimer = setTimeout(() => this.commitWheelResize(), 450);
+    if (!delta) return;
+    // Wheel deltas vary wildly by device/OS acceleration, so the FIRST event of
+    // a gesture (or a direction flip) is exactly one step, and a continued
+    // spin/swipe adds one more per ~120px of travel, at most every 90ms.
+    // One notch = 10 min, reliably.
+    const dir = Math.sign(delta);
+    let steps = 0;
+    if (newGesture || dir !== this._wheelDir) {
+      steps = dir;
+      this._wheelAcc = 0;
+      this._wheelStepTs = now;
+    } else {
+      this._wheelAcc = (this._wheelAcc || 0) + delta;
+      if (Math.abs(this._wheelAcc) >= 120 && now - (this._wheelStepTs || 0) >= 90) {
+        steps = Math.sign(this._wheelAcc);
+        this._wheelAcc = 0;
+        this._wheelStepTs = now;
+      }
+    }
+    this._wheelDir = dir;
+    if (!steps) return;
+    const follow = wr ? wr.follow : this.downstreamIds(task.id);
+    const base = wr ? wr.curDuration : task.duration;
+    const dur = Math.max(SNAP_MIN, Math.min(this.maxEndDuration(task, follow), base + steps * SNAP_MIN));
+    if (!wr || dur !== wr.curDuration) this.setState({ wheelResize: { id: task.id, curDuration: dur, follow } });
+  };
+
+  // Which task (id) a new wheel gesture should resize, or null to scroll.
+  wheelTargetFor(e) {
+    if (this.state.route !== 'timeline') return null;
+    const board = this.boardRef.current;
+    const el = e.target && e.target.closest ? e.target.closest('[data-task-id]') : null;
+    if (!el || !board || !board.contains(el)) return null;
+    const task = this.state.tasks.find((t) => String(t.id) === el.getAttribute('data-task-id'));
+    if (!task) return null;
+    const sel = this.state.selection;
+    const solelySelected = sel.length === 1 && sel[0] === task.id;
+    return e.altKey || solelySelected ? task.id : null;
+  }
+
+  // Manually scroll the nearest scrollable ancestor of the wheel target — used
+  // when ⌥+wheel's default (history navigation in Firefox) is cancelled, so
+  // ⌥+scroll off a task still just scrolls.
+  scrollNearest(e) {
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    let dx = e.deltaX * unit;
+    let dy = e.deltaY * unit;
+    for (let el = e.target; el && el.nodeType === 1; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      const canY = /(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight;
+      const canX = /(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth;
+      if ((dy && canY) || (dx && canX)) {
+        el.scrollBy({ left: canX ? dx : 0, top: canY ? dy : 0 });
+        if (canX) dx = 0;
+        if (canY) dy = 0;
+        if (!dx && !dy) return;
+      }
+    }
+    if (dx || dy) window.scrollBy({ left: dx, top: dy });
+  }
+
+  commitWheelResize() {
+    clearTimeout(this._wheelResizeTimer);
+    const wr = this.state.wheelResize;
+    if (!wr) return;
+    const task = this.state.tasks.find((t) => t.id === wr.id);
+    if (task && task.duration !== wr.curDuration) {
+      this.persist(this.applyEndResize(this.state.tasks, wr.id, wr.curDuration, wr.follow));
+    }
+    this.setState({ wheelResize: null });
   }
 
   toggleDone(task) {
@@ -3416,7 +3637,13 @@ export default class App extends React.Component {
           textAlign: 'left',
           boxSizing: 'border-box',
         },
-        onCycleColor: () => this.cycleTrackColor(i),
+        onCycleColor: (e) => {
+          if (e) e.stopPropagation();
+          const rect = e && e.currentTarget
+            ? e.currentTarget.getBoundingClientRect()
+            : { left: 0, top: 0, bottom: 0 };
+          this.openTrackColorPicker(i, rect);
+        },
         onDelete: (e) => {
           e.stopPropagation();
           this.requestDeleteTrack(i);
@@ -3811,9 +4038,15 @@ export default class App extends React.Component {
 
     const drag = this.state.drag;
     const groupDrag = this.state.groupDrag;
-    const resize = this.state.resize;
+    // A pending ⌥+wheel nudge renders exactly like an end-edge drag (live
+    // length, time HUD, connectors follow).
+    const resize =
+      this.state.resize || (this.state.wheelResize ? { ...this.state.wheelResize, edge: 'end' } : null);
     const byId = {};
     tasks.forEach((t) => (byId[t.id] = t));
+    // Right-edge followers of an end resize shift by the live duration delta.
+    const resizeFollow = new Set((resize && resize.follow) || []);
+    const resizeDelta = resize && byId[resize.id] ? resize.curDuration - byId[resize.id].duration : 0;
     const wiring = this.state.wiring;
     const pending = this.state.pendingConnect;
 
@@ -3842,6 +4075,8 @@ export default class App extends React.Component {
       if (resize && resize.id === t.id) {
         duration = resize.curDuration;
         if (resize.edge === 'start') start = resize.curStart;
+      } else if (resizeFollow.has(t.id)) {
+        start = Math.max(0, start + resizeDelta);
       }
       return { start, duration, lane };
     };
@@ -4129,7 +4364,7 @@ export default class App extends React.Component {
               ? 'pulseUrgent 1.1s ease-in-out infinite'
               : undefined,
           transition:
-            isDragging || isGroupMoving || (resize && resize.id === t.id)
+            isDragging || isGroupMoving || (resize && resize.id === t.id) || resizeFollow.has(t.id)
               ? 'none'
               : 'left .18s ease, top .18s ease, width .18s ease, height .18s ease, box-shadow .2s ease, background .3s ease',
         },
@@ -4968,6 +5203,18 @@ export default class App extends React.Component {
             onClose={() => this.closeTagPicker()}
           />
         )}
+        {this.state.trackColorPicker &&
+          this.state.tracks[this.state.trackColorPicker.trackIndex] && (
+            <TrackColorPicker
+              rect={this.state.trackColorPicker.rect}
+              value={this.state.tracks[this.state.trackColorPicker.trackIndex].color}
+              palette={PALETTE}
+              onPick={(color) => {
+                this.setTrackColor(this.state.trackColorPicker.trackIndex, color);
+              }}
+              onClose={() => this.closeTrackColorPicker()}
+            />
+          )}
       </div>
     );
   }

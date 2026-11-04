@@ -163,6 +163,17 @@ points and the `state` slice each drives:
   (`state.groupDrag`, when the card is already in the selection; group moves are
   time-axis only).
 - **`startResize` → resize** (`state.resize`) — drag trailing edge/corner.
+  End-edge resizes (drag or wheel) carry `follow` = `downstreamIds(id)`:
+  everything attached to the RIGHT edge (non-detached same-lane seam or
+  dependency child, transitively) shifts by the duration delta via
+  `applyEndResize`; left-edge attachments stay put. `maxEndDuration` keeps the
+  whole tail on the board.
+- **`onBoardWheel` → wheel resize** (`state.wheelResize`) — scroll over the
+  solely-selected task (or ⌥+scroll over any task) nudges its end by
+  `SNAP_MIN`. Window-level non-passive listener (survives board remounts;
+  cancels Firefox's ⌥+wheel history nav). Target is fixed per gesture (<200ms
+  gaps); `commitWheelResize` persists one undo entry on idle, pointer-down or
+  undo. Shift/Ctrl/⌘+wheel stay native.
 - **`startWire` → dependency wiring** (`state.wiring` for drag-to-connect;
   `state.pendingConnect` for the two-click connect gesture). Releasing on
   another card's dot makes it a child. `connectDep`/`deleteDependency` edit

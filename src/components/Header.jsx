@@ -187,6 +187,7 @@ export default function Header(props) {
     syncState = 'online',
     lastSyncAt = null,
     onSyncNow,
+    isNarrow = false,
   } = props;
 
   // Segmented orientation toggle. `toggleOrientation` simply flips the current
@@ -304,6 +305,370 @@ export default function Header(props) {
     textTransform: 'uppercase',
     padding: '4px 10px 2px',
   };
+
+  // The overflow menu's dropdown — shared by the desktop bar and the mobile
+  // header so the two never drift apart. It's position:fixed and anchored to the
+  // trigger's measured rect, so it works wherever the trigger lives.
+  const menuDropdown = menuOpen ? (
+    <div
+      role="menu"
+      aria-label="Timeline options"
+      style={{
+        position: 'fixed',
+        top: (menuRect ? menuRect.bottom + 8 : 64) + 'px',
+        right: (menuRect ? Math.max(8, window.innerWidth - menuRect.right) : 8) + 'px',
+        zIndex: 40,
+        minWidth: '230px',
+        maxHeight: 'calc(100vh - ' + (menuRect ? menuRect.bottom + 20 : 80) + 'px)',
+        overflowY: 'auto',
+        background: 'rgba(16,22,32,.96)',
+        backdropFilter: 'blur(16px)',
+        border: '1px solid rgba(255,255,255,.12)',
+        borderRadius: '12px',
+        boxShadow: '0 18px 40px rgba(0,0,0,.5)',
+        padding: '8px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+      }}
+    >
+      <div style={menuSectionLabelStyle}>View</div>
+      <div style={{ padding: '2px 10px 6px' }}>
+        <div style={segWrap} role="group" aria-label="Orientation">
+          <button type="button" style={{ ...seg(!isVertical), flex: 1 }} onClick={goHorizontal}>
+            Horizontal
+          </button>
+          <button type="button" style={{ ...seg(isVertical), flex: 1 }} onClick={goVertical}>
+            Vertical
+          </button>
+        </div>
+      </div>
+      {!isVertical && (
+        <HoverButton
+          onClick={toggleSidebar}
+          title={sidebarCollapsed ? 'Show track labels' : 'Hide track labels'}
+          aria-label={sidebarCollapsed ? 'Show track labels' : 'Hide track labels'}
+          aria-pressed={!sidebarCollapsed}
+          role="menuitemcheckbox"
+          aria-checked={!sidebarCollapsed}
+          style={
+            sidebarCollapsed
+              ? menuRowStyle
+              : { ...menuRowStyle, background: 'rgba(99,102,241,.18)', color: '#a5b4fc' }
+          }
+          hoverStyle={sidebarCollapsed ? menuRowHoverStyle : { background: 'rgba(99,102,241,.28)', color: '#e7e9ee' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <line x1="9" y1="4" x2="9" y2="20" />
+          </svg>
+          {sidebarCollapsed ? 'Show track labels' : 'Hide track labels'}
+        </HoverButton>
+      )}
+
+      <div style={menuDividerStyle} />
+      <div style={menuSectionLabelStyle}>Lists</div>
+      <HoverButton
+        onClick={() => {
+          setMenuOpen(false);
+          onOpenArchive && onOpenArchive();
+        }}
+        title="View deleted tracks"
+        aria-label="View deleted tracks"
+        role="menuitem"
+        style={menuRowStyle}
+        hoverStyle={menuRowHoverStyle}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        </svg>
+        Deleted tracks{archiveCount > 0 ? ' (' + archiveCount + ')' : ''}
+      </HoverButton>
+      <HoverButton
+        onClick={() => {
+          setMenuOpen(false);
+          onOpenBacklog && onOpenBacklog();
+        }}
+        title="Tasks that fell off the board"
+        aria-label="Open backlog"
+        role="menuitem"
+        style={backlogCount > 0 ? menuRowAmberStyle : menuRowStyle}
+        hoverStyle={backlogCount > 0 ? menuRowAmberHoverStyle : menuRowHoverStyle}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 7h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+          <path d="M3 7l2-4h14l2 4" />
+          <line x1="9" y1="12" x2="15" y2="12" />
+        </svg>
+        Backlog{backlogCount > 0 ? ' (' + backlogCount + ')' : ''}
+      </HoverButton>
+      <HoverButton
+        onClick={() => {
+          setMenuOpen(false);
+          onOpenTags && onOpenTags();
+        }}
+        title="Manage tags"
+        aria-label="Manage tags"
+        role="menuitem"
+        style={menuRowStyle}
+        hoverStyle={menuRowHoverStyle}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+          <line x1="7" y1="7" x2="7.01" y2="7" />
+        </svg>
+        Tags{tagCount > 0 ? ' (' + tagCount + ')' : ''}
+      </HoverButton>
+
+      <div style={menuDividerStyle} />
+      <div style={menuSectionLabelStyle}>Density</div>
+      <div style={{ padding: '2px 10px 6px' }}>
+        <ZoomBar
+          value={zoomBarValue}
+          min={zoomBarMin}
+          max={zoomBarMax}
+          step={zoomBarStep}
+          label={zoomBarLabel}
+          unit={zoomBarUnit}
+          onChange={onZoomBarChange}
+        />
+      </div>
+
+      <div style={menuDividerStyle} />
+      <HoverButton
+        onClick={() => {
+          setMenuOpen(false);
+          setHelpOpen(true);
+        }}
+        title="How to use"
+        aria-label="How to use"
+        role="menuitem"
+        style={menuRowStyle}
+        hoverStyle={menuRowHoverStyle}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+        How to use
+      </HoverButton>
+    </div>
+  ) : null;
+
+  // ----- Mobile (≤640px) header -------------------------------------------
+  // The desktop bar is one long horizontally-scrolling row, which buried
+  // Tasks / Completed / Focus / Now off the right edge on a phone. On narrow
+  // screens we instead stack: a slim brand+status row on top, and a fixed,
+  // evenly-spaced action bar below so the four key actions are always one tap
+  // away — no horizontal scrolling. Desktop is untouched.
+  if (isNarrow) {
+    const navBtn = (opts) => {
+      const { onClick, label, accent, active, badge, icon, ...rest } = opts;
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '3px',
+            padding: '8px 4px',
+            borderRadius: '10px',
+            border: '1px solid ' + (active ? hexA(accent, 0.6) : 'rgba(255,255,255,.1)'),
+            background: active ? hexA(accent, 0.16) : 'rgba(255,255,255,.04)',
+            color: active ? accent : 'rgba(231,233,238,.82)',
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '11px',
+            lineHeight: 1,
+            WebkitTapHighlightColor: 'transparent',
+          }}
+          {...rest}
+        >
+          <span style={{ position: 'relative', display: 'inline-flex', color: accent }}>
+            {icon}
+            {badge ? (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '-7px',
+                  right: '-11px',
+                  minWidth: '15px',
+                  height: '15px',
+                  padding: '0 3px',
+                  borderRadius: '999px',
+                  background: hexA(accent, 0.95),
+                  color: '#0b1016',
+                  fontSize: '9.5px',
+                  fontWeight: 800,
+                  fontFamily: "'JetBrains Mono',monospace",
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {badge}
+              </span>
+            ) : null}
+          </span>
+          <span>{label}</span>
+        </button>
+      );
+    };
+
+    return (
+      <header
+        className="app-header-bar"
+        style={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          padding: '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))',
+          borderBottom: '1px solid rgba(255,255,255,.08)',
+          flex: 'none',
+          background: 'linear-gradient(180deg,#141519,#101116)',
+        }}
+      >
+        {/* Row 1: brand + date/clock + sync, with the overflow menu on the right. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <BrandMark />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0, flex: 1 }}>
+            <span
+              style={{
+                fontFamily: "'JetBrains Mono',monospace",
+                fontWeight: 700,
+                letterSpacing: '.14em',
+                textTransform: 'uppercase',
+                fontSize: '15px',
+                background: 'linear-gradient(90deg,#e7fbff,#7dd3fc)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+                lineHeight: 1,
+              }}
+            >
+              Timeline
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '9.5px',
+                  fontWeight: 700,
+                  color: '#ffd60a',
+                  fontFamily: "'JetBrains Mono',monospace",
+                  letterSpacing: '.04em',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {todayLabel}
+                {nowClockLabel && (
+                  <>
+                    <span style={{ opacity: 0.45 }}>·</span>
+                    <span style={{ color: '#fff0a8' }}>{nowClockLabel}</span>
+                  </>
+                )}
+              </span>
+              <SyncPill syncState={syncState} lastSyncAt={lastSyncAt} onSyncNow={onSyncNow} />
+            </span>
+          </div>
+          <div ref={menuContainerRef} style={{ position: 'relative', flex: 'none' }}>
+            <HoverButton
+              onClick={() => (menuOpen ? setMenuOpen(false) : openMenu())}
+              title="Menu"
+              aria-label="Menu"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '38px',
+                height: '38px',
+                background: menuOpen ? 'rgba(99,102,241,.18)' : 'rgba(255,255,255,.05)',
+                border: menuOpen ? '1px solid rgba(99,102,241,.5)' : '1px solid rgba(255,255,255,.12)',
+                color: menuOpen ? '#a5b4fc' : 'rgba(231,233,238,.7)',
+                borderRadius: '10px',
+                cursor: 'pointer',
+              }}
+              hoverStyle={{ background: 'rgba(255,255,255,.1)', color: '#e7e9ee' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="4" y1="7" x2="20" y2="7" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="17" x2="20" y2="17" />
+              </svg>
+            </HoverButton>
+          </div>
+        </div>
+
+        {/* Row 2: the four quick actions, always visible, evenly spread. */}
+        <div style={{ display: 'flex', alignItems: 'stretch', gap: '7px' }}>
+          {navBtn({
+            onClick: () => onOpenTodo && onOpenTodo(),
+            label: 'Tasks',
+            accent: '#5eead4',
+            active: !!todoOpen,
+            badge: todoCount > 0 ? todoCount : null,
+            'aria-label': 'Open to-do list',
+            'aria-pressed': !!todoOpen,
+            icon: (
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="4 12 9 17 20 6" />
+              </svg>
+            ),
+          })}
+          {navBtn({
+            onClick: () => onOpenCompleted && onOpenCompleted(),
+            label: 'Completed',
+            accent: '#6ee7b7',
+            badge: completedCount > 0 ? completedCount : null,
+            'aria-label': 'View completed tasks',
+            icon: (
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <polyline points="8 12.5 11 15.5 16.5 9" />
+              </svg>
+            ),
+          })}
+          {navBtn({
+            onClick: () => onTogglePomodoro && onTogglePomodoro(),
+            label: 'Focus',
+            accent: '#5eead4',
+            active: pomodoroOpen,
+            'data-panel-opener': 'true',
+            'aria-label': 'Focus timer',
+            'aria-pressed': pomodoroOpen,
+            icon: <span aria-hidden="true" style={{ fontSize: '18px', lineHeight: 1 }}>🍅</span>,
+          })}
+          {navBtn({
+            onClick: jumpToNow,
+            label: 'Now',
+            accent: '#ffd60a',
+            'aria-label': 'Jump to now',
+            icon: (
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <polyline points="12 7 12 12 15.5 14" />
+              </svg>
+            ),
+          })}
+        </div>
+
+        {menuDropdown}
+        {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
+      </header>
+    );
+  }
 
   return (
     <header

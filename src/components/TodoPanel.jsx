@@ -73,6 +73,10 @@ function TodoRow({
   // still opens the picker to override. null ⇒ fall back to the picker.
   const groupTrackIndex = typeof t.groupTrackIndex === 'number' ? t.groupTrackIndex : null;
   const quickAdd = canAdd && !isGroupRoot && groupTrackIndex != null;
+  // A to-do whose title is exactly "---" renders as a visual divider — a line
+  // across the row, no checkbox or action buttons. Double-click still enters the
+  // normal rename editor (below), so the line can be turned back into a task.
+  const isSeparator = !editingTitle && (t.title || '').trim() === '---';
   // Long-press plumbing for the + button: on a quick-add row a press-and-hold
   // opens the full track picker so the group's default track can be overridden.
   const pressTimer = React.useRef(null);
@@ -115,6 +119,27 @@ function TodoRow({
           api.startRename(t.id);
         }}
       >
+        {isSeparator ? (
+          <>
+            <span className="todo-sep-line" aria-hidden="true" />
+            <button
+              type="button"
+              className="todo-act danger no-fold"
+              title="Delete separator"
+              aria-label="Delete separator"
+              onClick={(e) => {
+                e.stopPropagation();
+                api.remove(t.id);
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+            </button>
+          </>
+        ) : (
+        <>
         {!isGroupHead && (
           <button
             type="button"
@@ -303,6 +328,8 @@ function TodoRow({
             <line x1="18" y1="6" x2="6" y2="18" />
           </svg>
         </button>
+        )}
+        </>
         )}
       </div>
 

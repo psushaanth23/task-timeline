@@ -15,6 +15,8 @@ const SECTIONS = [
       ['Single click', 'Select'],
       ['Drag', 'Move'],
       ['Drag edges', 'Resize duration'],
+      ['Click task, then scroll on it', 'Stretch / shrink by 10 min'],
+      ['⌥ + scroll on any task', 'Same, without clicking first'],
       ['Drag on empty timeline', 'Marquee-select'],
       ['Move a selection', 'Selected tasks move together'],
     ],

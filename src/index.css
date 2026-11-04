@@ -840,6 +840,20 @@ select,
   border-radius: 1px;
   background: linear-gradient(90deg, rgba(34, 211, 238, 0.15), #22d3ee);
 }
+/* A "---" to-do renders as a divider: a hairline filling the row, no checkbox. */
+.todo-sep-line {
+  flex: 1 1 auto;
+  height: 1px;
+  min-width: 0;
+  border-radius: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.22) 25%,
+    rgba(255, 255, 255, 0.22) 75%,
+    rgba(255, 255, 255, 0.04)
+  );
+}
 .todo-ttl {
   flex: 0 1 auto;
   min-width: 0;
